@@ -16,13 +16,9 @@ const MODE_STYLES: Record<LiveMode, { label: string; text: string; bg: string; b
 }
 
 export function LivePanel({ live, configureMode }: LivePanelProps) {
-  const [apiKey, setApiKey] = useState('')
-  const [apiSecret, setApiSecret] = useState('')
-  const [passphrase, setPassphrase] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
   const [credsConfigured, setCredsConfigured] = useState(false)
-  const [showCreds, setShowCreds] = useState(false)
 
   // Check if credentials are already saved in the DB
   useEffect(() => {
@@ -41,29 +37,35 @@ export function LivePanel({ live, configureMode }: LivePanelProps) {
     setBusy(true)
     setMsg(null)
     try {
-      // If creds fields are filled, save to DB first
       let creds: { apiKey: string; apiSecret: string; passphrase: string } | undefined
-      if (apiKey && apiSecret && passphrase) {
-        const saveRes = await fetch('/api/credentials', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ exchange: 'okx', apiKey, apiSecret, passphrase, testnet: targetMode === 'testnet' }),
-        })
-        if (!saveRes.ok) {
-          const err = await saveRes.json().catch(() => ({}))
-          throw new Error(err.error || 'Failed to save credentials')
+      // For live modes, fetch the ACTIVE credential from the DB (managed by the Credential Manager)
+      if (targetMode !== 'sim') {
+        const statusRes = await fetch('/api/credentials/status')
+        const status = await statusRes.json()
+        if (status.configured && status.configured) {
+          // Find the active credential's ID
+          const listRes = await fetch('/api/credentials')
+          const list = await listRes.json()
+          const active = (list.credentials || []).find((c: { active: boolean; id: string }) => c.active)
+          if (active) {
+            // Reveal the keys to send to the engine
+            const revRes = await fetch(`/api/credentials/reveal?id=${active.id}`)
+            if (revRes.ok) {
+              const rev = await revRes.json()
+              creds = { apiKey: rev.apiKey, apiSecret: rev.apiSecret, passphrase: rev.passphrase || '' }
+            }
+          }
         }
-        creds = { apiKey, apiSecret, passphrase }
-        setCredsConfigured(true)
-        // Clear the fields after save
-        setApiKey('')
-        setApiSecret('')
-        setPassphrase('')
+        if (!creds) {
+          setMsg({ type: 'err', text: `No active credential set. Add & activate one in the Credential Manager below, then switch to ${targetMode.toUpperCase()}.` })
+          setBusy(false)
+          return
+        }
       }
       // Send to the engine
       const ack = await configureMode(targetMode, creds)
       if (!ack.ok) throw new Error(ack.error || 'Engine rejected configuration')
-      setMsg({ type: 'ok', text: `Mode switched to ${targetMode.toUpperCase()}${creds ? ' with saved credentials' : ''}` })
+      setMsg({ type: 'ok', text: `Mode switched to ${targetMode.toUpperCase()}${creds ? ' with active credentials' : ''}` })
     } catch (e) {
       setMsg({ type: 'err', text: String((e as Error).message || e) })
     } finally {
@@ -162,42 +164,9 @@ export function LivePanel({ live, configureMode }: LivePanelProps) {
         </div>
       )}
 
-      {/* Credential input form */}
-      <div className="mt-3">
-        <button
-          onClick={() => setShowCreds(!showCreds)}
-          className="text-[10px] uppercase tracking-wider text-zinc-500 hover:text-zinc-300"
-        >
-          {showCreds ? '− Hide' : '+ Configure'} OKX API credentials
-        </button>
-        {showCreds && (
-          <div className="mt-2 space-y-1.5">
-            <input
-              type="text"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="API Key"
-              className="w-full rounded border border-zinc-800 bg-zinc-900/60 px-2 py-1 font-mono text-[11px] text-zinc-200 placeholder:text-zinc-600 focus:border-teal-500/50 focus:outline-none"
-            />
-            <input
-              type="password"
-              value={apiSecret}
-              onChange={(e) => setApiSecret(e.target.value)}
-              placeholder="API Secret"
-              className="w-full rounded border border-zinc-800 bg-zinc-900/60 px-2 py-1 font-mono text-[11px] text-zinc-200 placeholder:text-zinc-600 focus:border-teal-500/50 focus:outline-none"
-            />
-            <input
-              type="password"
-              value={passphrase}
-              onChange={(e) => setPassphrase(e.target.value)}
-              placeholder="Passphrase"
-              className="w-full rounded border border-zinc-800 bg-zinc-900/60 px-2 py-1 font-mono text-[11px] text-zinc-200 placeholder:text-zinc-600 focus:border-teal-500/50 focus:outline-none"
-            />
-            <p className="text-[9px] leading-snug text-zinc-600">
-              Credentials are obfuscated (XOR) and stored locally in the app DB. They are sent to the engine only when you switch to a live mode. Leave blank to use already-saved credentials.
-            </p>
-          </div>
-        )}
+      {/* Credential status note (managed by the Credential Manager panel below) */}
+      <div className="mt-3 rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-[10px] leading-snug text-zinc-500">
+        Credentials are managed in the <strong className="text-teal-400">Credential Manager</strong> panel below. Add keys there, activate one, then switch mode here. The active set is sent to the engine automatically.
       </div>
 
       {/* Mode switcher */}

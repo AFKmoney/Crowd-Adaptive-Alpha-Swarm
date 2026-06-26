@@ -33,11 +33,12 @@ export async function GET() {
   }
 }
 
-// POST /api/credentials — upsert the active credential set
+// POST /api/credentials — save a credential set (does NOT auto-activate; use /activate)
+// Body: { exchange?, label?, apiKey, apiSecret, passphrase?, testnet?, active? }
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { exchange = 'okx', label = 'default', apiKey, apiSecret, passphrase, testnet = true } = body
+    const { exchange = 'okx', label, apiKey, apiSecret, passphrase, testnet = true, active = false } = body
 
     if (!apiKey || !apiSecret) {
       return NextResponse.json(
@@ -46,28 +47,38 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    await db.credential.updateMany({
-      where: { exchange, active: true },
-      data: { active: false },
-    })
+    // Auto-generate a label if none provided (e.g. "okx-3")
+    let finalLabel = label
+    if (!finalLabel) {
+      const count = await db.credential.count({ where: { exchange } })
+      finalLabel = `${exchange}-${count + 1}`
+    }
+
+    // If activating, deactivate others first
+    if (active) {
+      await db.credential.updateMany({
+        where: { exchange, active: true },
+        data: { active: false },
+      })
+    }
 
     const created = await db.credential.upsert({
-      where: { exchange_label: { exchange, label } },
+      where: { exchange_label: { exchange, label: finalLabel } },
       create: {
         exchange,
-        label,
+        label: finalLabel,
         apiKey,
         apiSecret: obfuscate(apiSecret),
         passphrase: passphrase ? obfuscate(passphrase) : null,
         testnet,
-        active: true,
+        active,
       },
       update: {
         apiKey,
         apiSecret: obfuscate(apiSecret),
         passphrase: passphrase ? obfuscate(passphrase) : null,
         testnet,
-        active: true,
+        active,
       },
     })
 
@@ -75,8 +86,9 @@ export async function POST(req: NextRequest) {
       status: 'saved',
       id: created.id,
       exchange,
-      label,
+      label: finalLabel,
       testnet,
+      active,
       apiSecretMasked: maskSecret(apiSecret),
     })
   } catch (err) {

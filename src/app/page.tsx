@@ -17,6 +17,7 @@ import { ExecutionPanel } from '@/components/omega/execution-panel'
 import { CrystalBallPanel } from '@/components/omega/crystal-ball-panel'
 import { LivePanel } from '@/components/omega/live-panel'
 import { DivineArsenalPanel } from '@/components/omega/divine-arsenal-panel'
+import { CredentialsManager } from '@/components/omega/credentials-manager'
 import { Sparkles } from 'lucide-react'
 
 export default function Home() {
@@ -62,6 +63,9 @@ export default function Home() {
             {state ? <LivePanel live={state.live} configureMode={configureMode} /> : <Skeleton className="h-[320px]" />}
             {state ? <CrowdPanel crowd={state.crowd} /> : <Skeleton className="h-[320px]" />}
           </div>
+
+          {/* Row 1b — Credential Manager (full width) */}
+          <CredentialsManager />
 
           {/* Row 2 — Crystal Ball + Liquidation + Order Book + Microstructure (the prescience row) */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">

@@ -538,3 +538,32 @@ Stage Summary:
 - VLM: 6/6 PASS — all 12 weapons visible, correctly colored, strike counts showing, zero defects.
 - Lint clean. All 3 services up (3000/3003/3004).
 - The system now has 12 divine-level weapons beyond the original TITAN modules, each exploiting a structural flaw in crypto market microstructure: TWAP front-running, options gamma, cascade forcing, iceberg mapping, on-chain shadowing, liquidity vacuum, engine overload, and DeFi collateral dominoes.
+
+---
+Task ID: TITAN-8 (Credential Manager — Multi-Set, Generate, Import/Export)
+Agent: main
+Task: Add a full credential manager — auto-generate API Key/Secret/Passphrase, export to .txt file (downloadable), import from external .txt, view saved keys, switch between them without retyping, delete, manual save.
+
+Work Log:
+- Refactored POST /api/credentials: no longer auto-deactivates others; supports `active` flag + auto-generated labels (okx-N).
+- Created POST /api/credentials/generate: generates a strong 24-char passphrase (alphanumeric, no ambiguous chars) + auto label. Can save immediately if apiKey/apiSecret provided, or just return the passphrase for the user to set on OKX.
+- Created POST /api/credentials/activate: sets one credential as active (deactivates all others for that exchange).
+- Created GET /api/credentials/reveal?id=: returns deobfuscated (plaintext) apiKey/apiSecret/passphrase for viewing.
+- Created GET /api/credentials/export?id=: downloads a .txt file (key=value format, re-importable) with Content-Disposition attachment header. Filename: okx-credentials-{label}-{testnet|mainnet}.txt.
+- Created POST /api/credentials/import: parses key=value text content and saves a new credential set.
+- Created src/components/omega/credentials-manager.tsx: full manager panel with:
+  * List of all saved credential sets (cards with label, exchange, testnet/mainnet badge, active badge, masked keys)
+  * [New] button → add form (label, apiKey, apiSecret, passphrase + [Gen] button for auto-generate passphrase, testnet checkbox, save)
+  * [Import] button → file picker (.txt) → reads + posts to /import
+  * [Refresh] button → reloads the list
+  * Per-credential actions: [Reveal/Hide] (fetches plaintext, shows full keys + copy buttons), [.txt] (download export), [Activate] (switch active without retyping), [Delete] (with confirm)
+  * Empty state, loading state, success/error messages
+- Updated live-panel.tsx: removed the inline credential form; saveCredsAndSwitch now fetches the ACTIVE credential from the DB (via /status → /list → /reveal) and sends it to the engine. If no active credential, shows error guiding user to the Credential Manager.
+- Added CredentialsManager to page.tsx layout (Row 1b, full width, between the top row and the prescience row).
+
+Stage Summary:
+- CREDENTIAL MANAGER DELIVERED & VERIFIED.
+- Full API flow tested (11/11 steps): generate passphrase → save with gen passphrase → save second set → list → reveal → activate/switch → export .txt → import .txt → delete → final list. All passed.
+- Agent Browser: "CREDENTIAL MANAGER" panel renders with New/Import/Refresh buttons, empty state message, all 16 other panels intact. OKX Wallet panel now references the Credential Manager. VLM: 6/6 PASS, zero defects.
+- Lint clean. All 3 services up (3000/3003/3004).
+- User can now: auto-generate a strong passphrase, save multiple OKX credential sets, view/reveal any set's keys, switch between them with one click (Activate), export any set to a downloadable .txt file, import a .txt file from an external source, and delete sets. The LivePanel uses the active set automatically when switching to TESTNET/MAINNET.
