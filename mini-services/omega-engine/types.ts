@@ -7,6 +7,7 @@ export type AgentRole = 'crowd_follower' | 'contrarian' | 'neutral'
 export type Side = 'BUY' | 'SELL' | 'FLAT'
 export type CrowdDimension = 'funding' | 'sentiment' | 'buzz' | 'composite'
 export type CrowdDirection = 'long' | 'short'
+export type LiveMode = 'sim' | 'testnet' | 'mainnet'
 
 export interface MarketState {
   symbol: string
@@ -288,6 +289,30 @@ export interface TimeBanditState {
   lastStrike: { ts: number; side: Side; signal: number; confidence: number; takeProfitBps: number } | null
 }
 
+// ============ Live Mode (OKX connectivity) ============
+
+export interface LiveStatus {
+  mode: LiveMode
+  okxConnected: boolean // WS connected to OKX
+  credentialsConfigured: boolean
+  exchange: string // 'okx'
+  instId: string // 'BTC-USDT-SWAP'
+  balanceUsd: number // real account equity (0 in sim)
+  availableUsd: number
+  marginRatio: number
+  realPositions: Array<{
+    instId: string
+    side: 'long' | 'short' | 'net'
+    pos: number
+    avgPx: number
+    upl: number
+    uplRatio: number
+    lever: string
+  }>
+  lastOrderResult: { ordId: string; sCode: number; sMsg: string; ts: number } | null
+  liveTrades: number // cumulative real orders placed
+}
+
 export interface OmegaState {
   ts: number
   regime: RegimeState
@@ -309,4 +334,6 @@ export interface OmegaState {
   // Time-Bandit / Boule de Cristal
   crystalBall: CrystalBallState
   timeBandit: TimeBanditState
+  // Live mode
+  live: LiveStatus
 }

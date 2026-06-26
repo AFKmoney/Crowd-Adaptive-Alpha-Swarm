@@ -26,7 +26,9 @@ import { VenuesDomino } from './venues.ts'
 import { ExecutionBlade } from './execution-blade.ts'
 import { CrystalBall } from './crystal-ball.ts'
 import { TimeBandit } from './time-bandit.ts'
-import type { OmegaState, OmegaEvent, EventType } from './types.ts'
+import { OkxClient, INST_ID, type OkxMode } from './okx-client.ts'
+import { OkxWebSocket, type OkxLiveTick } from './okx-ws.ts'
+import type { OmegaState, OmegaEvent, EventType, LiveMode, LiveStatus } from './types.ts'
 
 const PORT = 3003
 const TICK_MS = 1000 // 1 bar / 1 broadcast per second
@@ -58,6 +60,19 @@ const venues = new VenuesDomino()
 const blade = new ExecutionBlade()
 const crystalBall = new CrystalBall()
 const timeBandit = new TimeBandit()
+const okxClient = new OkxClient()
+const okxWs = new OkxWebSocket()
+
+// ---- Live mode state ----
+let currentMode: LiveMode = 'sim'
+let livePrice: number = 0 // latest real OKX price (0 = not yet received)
+let liveTickData: OkxLiveTick | null = null
+let liveBalance = { totalEqUsd: 0, availableUsd: 0, marginRatio: 0 }
+let livePositions: LiveStatus['realPositions'] = []
+let liveLastOrder: LiveStatus['lastOrderResult'] = null
+let liveTrades = 0
+let lastBalanceFetch = 0
+const BALANCE_FETCH_INTERVAL = 5000 // fetch balance every 5s in live mode
 
 const startedAt = Date.now()
 const events: OmegaEvent[] = []
@@ -78,13 +93,85 @@ function logEvent(type: EventType, message: string, details: Record<string, unkn
 }
 
 // Seed an initial event
-logEvent('regime_change', 'OMEGA engine online — TITAN-1 modules armed (ATR / Sniper / OrderBook / Toxic / Domino / MakerGrid). Regime calm_bull, crowd at rest.', {
+logEvent('regime_change', 'OMEGA engine online — TITAN-1 modules armed (ATR / Sniper / OrderBook / Toxic / Domino / MakerGrid). Mode: SIM (live OKX ready).', {
   regime: 'calm_bull',
 })
 
+// ---- OKX WebSocket: receive real-time price ticks ----
+okxWs.onTick((t: OkxLiveTick) => {
+  livePrice = t.price
+  liveTickData = t
+})
+
+// ---- Mode switching (called from the omega:configure socket handler) ----
+function setMode(mode: LiveMode, creds?: { apiKey: string; apiSecret: string; passphrase: string }) {
+  const prevMode = currentMode
+  currentMode = mode
+  const okxMode: OkxMode = mode === 'sim' ? 'sim' : mode
+  okxClient.configure(okxMode, creds ?? null)
+  okxWs.configure(okxMode)
+
+  if (mode === 'sim') {
+    okxWs.disconnect()
+    livePrice = 0
+    liveTickData = null
+    logEvent('regime_change', `Mode switched → SIM (simulation engine). OKX disconnected.`, { mode })
+  } else {
+    // Connect the WebSocket for real-time price data (works without creds for public feed)
+    okxWs.connect()
+    if (creds) {
+      logEvent('consensus', `⚡ LIVE MODE ENGAGED → ${mode.toUpperCase()} on OKX (${INST_ID}). Credentials configured. Real order execution ${mode === 'testnet' ? '(DEMO TRADING)' : '(MAINNET — REAL CAPITAL)'}.`, { mode, testnet: mode === 'testnet' })
+    } else {
+      logEvent('consensus', `📡 LIVE PRICE FEED → ${mode.toUpperCase()} OKX (${INST_ID}). WebSocket connected for real market data. Configure credentials to enable order execution.`, { mode })
+    }
+  }
+  void prevMode
+}
+
+// ---- Live order execution (called when Risk Aegis opens a position in live mode) ----
+async function executeLiveOrder(side: 'BUY' | 'SELL', sizeUsd: number, price: number) {
+  if (!okxClient.hasCredentials) {
+    logEvent('risk_hard_stop', `🛡️ LIVE ORDER SKIPPED — no OKX credentials configured. Signal was ${side} $${sizeUsd.toFixed(2)} @ $${price.toFixed(2)}.`, { side, sizeUsd, reason: 'no_credentials' })
+    return
+  }
+  // OKX BTC-USDT-SWAP: 1 contract = 0.01 BTC. Compute contracts from USD size.
+  const contractsPerBtc = 0.01
+  const btcQty = sizeUsd / price
+  const sz = Math.max(1, Math.round(btcQty / contractsPerBtc))
+  try {
+    const result = await okxClient.placeMarketOrder(side.toLowerCase() as 'buy' | 'sell', sz)
+    liveLastOrder = { ordId: result.ordId, sCode: result.sCode, sMsg: result.sMsg, ts: Date.now() }
+    liveTrades++
+    if (result.sCode === 0) {
+      logEvent('trade_open', `🔴 LIVE ORDER FILLED — ${side} ${sz} contracts (${INST_ID}) @ ~$${price.toFixed(2)} on ${currentMode.toUpperCase()}. Order ID: ${result.ordId}.`, {
+        side, sz, price, ordId: result.ordId, mode: currentMode, live: true,
+      })
+    } else {
+      logEvent('risk_hard_stop', `🛡️ LIVE ORDER REJECTED by OKX — ${side} ${sz} contracts: ${result.sMsg} (code ${result.sCode}).`, { side, sz, sMsg: result.sMsg, sCode: result.sCode })
+    }
+  } catch (err) {
+    logEvent('risk_hard_stop', `🛡️ LIVE ORDER ERROR — ${side} ${sz} contracts: ${String(err)}`, { side, sz, error: String(err) })
+  }
+}
+
 // ---- Main loop ----
 function tick() {
-  const marketTick = market.step()
+  // ---- Price source: SIM (synthetic) vs LIVE (real OKX WebSocket) ----
+  let marketTick
+  if (currentMode !== 'sim' && livePrice > 0 && liveTickData) {
+    // LIVE mode: inject the real OKX price into the market sim so all
+    // indicators (ATR, RSI, vol, crowd, sniper, etc.) compute on real data.
+    marketTick = market.injectLivePrice(livePrice, {
+      open: liveTickData.open,
+      high: liveTickData.high,
+      low: liveTickData.low,
+      close: liveTickData.close,
+      vol: liveTickData.vol,
+    })
+  } else {
+    // SIM mode (or live but no price yet): synthetic market
+    marketTick = market.step()
+  }
 
   // Regime detection (first axis)
   const newRegime = regimeDet.update(marketTick)
@@ -273,11 +360,48 @@ function tick() {
   )
   for (const re of riskEvents) {
     logEvent(re.type, re.message, re.details)
+    // ---- Live order execution: when Risk Aegis opens a NEW position in live mode,
+    // fire a real OKX market order. The sim position tracking continues in parallel
+    // for display; the real fill comes from OKX. ----
+    if (re.type === 'trade_open' && currentMode !== 'sim' && okxClient.hasCredentials) {
+      const side = (re.details.side as 'BUY' | 'SELL') ?? consensus.side
+      const sizeUsd = (re.details.sizeUsd as number) ?? riskState.position?.sizeUsd ?? 0
+      if (sizeUsd > 0 && side !== 'FLAT') {
+        executeLiveOrder(side, sizeUsd, marketTick.price)
+      }
+    }
+  }
+
+  // ---- Live balance + positions fetch (every 5s in live mode with creds) ----
+  if (currentMode !== 'sim' && okxClient.hasCredentials && Date.now() - lastBalanceFetch > BALANCE_FETCH_INTERVAL) {
+    lastBalanceFetch = Date.now()
+    okxClient.getBalance().then((b) => {
+      liveBalance = { totalEqUsd: b.totalEqUsd, availableUsd: b.availBalUsd, marginRatio: b.marginRatio }
+    }).catch((e) => {
+      // silent — balance fetch failures are common (rate limits, demo mode quirks)
+      void e
+    })
+    okxClient.getPositions().then((ps) => {
+      livePositions = ps.map((p) => ({ instId: p.instId, side: p.posSide, pos: p.pos, avgPx: p.avgPx, upl: p.upl, uplRatio: p.uplRatio, lever: p.lever }))
+    }).catch(() => { /* noop */ })
   }
 
   stats.uptime = Math.floor((Date.now() - startedAt) / 1000)
 
   // Build & broadcast full extended state
+  const liveStatus: LiveStatus = {
+    mode: currentMode,
+    okxConnected: okxWs.isConnected,
+    credentialsConfigured: okxClient.hasCredentials,
+    exchange: 'okx',
+    instId: INST_ID,
+    balanceUsd: liveBalance.totalEqUsd,
+    availableUsd: liveBalance.availableUsd,
+    marginRatio: liveBalance.marginRatio,
+    realPositions: livePositions,
+    lastOrderResult: liveLastOrder,
+    liveTrades,
+  }
   const state: OmegaState = {
     ts: Date.now(),
     regime: regimeDet.state(),
@@ -304,6 +428,8 @@ function tick() {
     // Time-Bandit / Boule de Cristal
     crystalBall: crystalState,
     timeBandit: timeBandit.state(crystalState),
+    // Live mode
+    live: liveStatus,
   }
 
   io.emit('omega:state', state)
@@ -313,6 +439,24 @@ io.on('connection', (socket) => {
   console.log(`[omega-engine] client connected: ${socket.id}`)
   // Send current event backlog so a fresh client has history
   socket.emit('omega:backlog', events.slice(0, MAX_EVENTS))
+  // Send the current mode so a fresh client knows the engine state
+  socket.emit('omega:mode', { mode: currentMode, okxConnected: okxWs.isConnected, credentialsConfigured: okxClient.hasCredentials })
+
+  // ---- Receive mode + credentials from the dashboard ----
+  socket.on('omega:configure', (payload: { mode: LiveMode; apiKey?: string; apiSecret?: string; passphrase?: string }) => {
+    console.log(`[omega-engine] omega:configure received: mode=${payload.mode} creds=${!!payload.apiKey}`)
+    try {
+      const creds = (payload.apiKey && payload.apiSecret && payload.passphrase)
+        ? { apiKey: payload.apiKey, apiSecret: payload.apiSecret, passphrase: payload.passphrase }
+        : undefined
+      setMode(payload.mode, creds)
+      // Acknowledge back to the sender
+      socket.emit('omega:configure:ack', { ok: true, mode: payload.mode, credentialsConfigured: !!creds })
+    } catch (err) {
+      socket.emit('omega:configure:ack', { ok: false, error: String(err) })
+    }
+  })
+
   socket.on('disconnect', () => {
     console.log(`[omega-engine] client disconnected: ${socket.id}`)
   })

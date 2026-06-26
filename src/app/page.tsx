@@ -15,10 +15,11 @@ import { MicrostructurePanel } from '@/components/omega/microstructure-panel'
 import { RiskPanel } from '@/components/omega/risk-panel'
 import { ExecutionPanel } from '@/components/omega/execution-panel'
 import { CrystalBallPanel } from '@/components/omega/crystal-ball-panel'
+import { LivePanel } from '@/components/omega/live-panel'
 import { Sparkles } from 'lucide-react'
 
 export default function Home() {
-  const { state, connected, events, weightHistory, candleHistory } = useOmegaEngine()
+  const { state, connected, events, weightHistory, candleHistory, configureMode } = useOmegaEngine()
 
   const pos = state?.risk.position
   const entry = pos?.entryPrice
@@ -48,15 +49,16 @@ export default function Home() {
         </div>
 
         <main className="mx-auto w-full max-w-[1700px] flex-1 space-y-4 px-4 py-4 sm:px-6 sm:py-5">
-          {/* Row 1 — Price chart + Crowd panel */}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <div className="lg:col-span-2">
+          {/* Row 1 — Price chart + Live mode + Crowd panel */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <div className="md:col-span-2">
               {state ? (
                 <PriceChart candles={candleHistory} positionPrice={entry} takeProfit={tp} stopLoss={sl} />
               ) : (
                 <Skeleton className="h-[320px]" />
               )}
             </div>
+            {state ? <LivePanel live={state.live} configureMode={configureMode} /> : <Skeleton className="h-[320px]" />}
             {state ? <CrowdPanel crowd={state.crowd} /> : <Skeleton className="h-[320px]" />}
           </div>
 

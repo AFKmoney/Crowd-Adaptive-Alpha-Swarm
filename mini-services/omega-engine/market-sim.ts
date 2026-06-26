@@ -63,7 +63,6 @@ export class MarketSim {
   step(): MarketTick {
     this.ts = Date.now()
     const p = REGIME_PARAMS[this.regime]
-
     const prevClose = this.price
 
     // Mean-reverting Ornstein-Uhlenbeck-ish component around a drifting mean
@@ -111,6 +110,39 @@ export class MarketSim {
     // OBI mean-reverts, but leans with recent momentum (crowd piles in)
     const momentum = this.bars.slice(-5).reduce((a, b) => a + b, 0)
     this.obi = clamp(this.obi * 0.7 + momentum * 40 + gaussian() * 0.1, -1, 1)
+
+    return this.tick()
+  }
+
+  /**
+   * Inject a REAL live price (from OKX WebSocket) and update all indicators.
+   * Used in live mode — replaces step() so ATR/RSI/vol compute on real data.
+   * Optionally accepts the real OHLC from the exchange; if omitted, synthesizes
+   * a bar from prevClose → price.
+   */
+  injectLivePrice(price: number, realOhlc?: { open: number; high: number; low: number; close: number; vol: number }): MarketTick {
+    this.ts = Date.now()
+    const prevClose = this.price
+    this.price = Math.max(1, price)
+    this.ret = prevClose > 0 ? Math.log(this.price / prevClose) : 0
+
+    const open = prevClose || price
+    const close = price
+    const high = realOhlc ? realOhlc.high : Math.max(open, close)
+    const low = realOhlc ? realOhlc.low : Math.min(open, close)
+    const bar: OhlcBar = { ts: this.ts, open, high: Math.max(high, close, open), low: Math.max(1, Math.min(low, close, open)), close }
+    this.ohlc.push(bar)
+    if (this.ohlc.length > 60) this.ohlc.shift()
+    this.atr14 = computeAtr14(this.ohlc, this.atr14)
+
+    this.bars.push(this.ret)
+    if (this.bars.length > 40) this.bars.shift()
+    this.prices.push(this.price)
+    if (this.prices.length > 60) this.prices.shift()
+    this.peak24h = Math.max(...this.prices, this.price)
+
+    // OBI: can't observe real L2 here; keep previous value (decays toward 0)
+    this.obi = clamp(this.obi * 0.95, -1, 1)
 
     return this.tick()
   }

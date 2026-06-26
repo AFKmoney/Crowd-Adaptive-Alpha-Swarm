@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { io, type Socket } from 'socket.io-client'
-import type { OmegaState, OmegaEvent } from '@/lib/omega-types'
+import type { OmegaState, OmegaEvent, LiveMode } from '@/lib/omega-types'
 
 interface UseOmegaEngine {
   state: OmegaState | null
@@ -19,6 +19,7 @@ interface UseOmegaEngine {
   }>
   compositeHistory: Array<{ ts: number; composite: number }>
   candleHistory: Array<{ time: number; open: number; high: number; low: number; close: number }>
+  configureMode: (mode: LiveMode, creds?: { apiKey: string; apiSecret: string; passphrase: string }) => Promise<{ ok: boolean; error?: string }>
 }
 
 const MAX_WEIGHT_HISTORY = 120
@@ -105,5 +106,26 @@ export function useOmegaEngine(): UseOmegaEngine {
   // expose reconnect for manual retry button (unused but available)
   void reconnect
 
-  return { state, connected, events, weightHistory, compositeHistory, candleHistory }
+  const configureMode = useCallback(async (mode: LiveMode, creds?: { apiKey: string; apiSecret: string; passphrase: string }): Promise<{ ok: boolean; error?: string }> => {
+    const socket = socketRef.current
+    if (!socket || !socket.connected) {
+      return { ok: false, error: 'Engine not connected' }
+    }
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => resolve({ ok: false, error: 'Engine did not acknowledge' }), 5000)
+      socket.once('omega:configure:ack', (ack: { ok: boolean; error?: string }) => {
+        clearTimeout(timeout)
+        resolve(ack)
+      })
+      const payload: { mode: LiveMode; apiKey?: string; apiSecret?: string; passphrase?: string } = { mode }
+      if (creds) {
+        payload.apiKey = creds.apiKey
+        payload.apiSecret = creds.apiSecret
+        payload.passphrase = creds.passphrase
+      }
+      socket.emit('omega:configure', payload)
+    })
+  }, [])
+
+  return { state, connected, events, weightHistory, compositeHistory, candleHistory, configureMode }
 }

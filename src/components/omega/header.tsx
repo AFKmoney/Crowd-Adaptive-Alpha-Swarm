@@ -1,12 +1,18 @@
 'use client'
 
-import { Activity, Radio, Zap } from 'lucide-react'
-import type { OmegaState } from '@/lib/omega-types'
+import { Activity, Radio, Zap, Power } from 'lucide-react'
+import type { OmegaState, LiveMode } from '@/lib/omega-types'
 import { REGIME_STYLES, SIDE_STYLES, fmtPrice, fmtPct, fmtUptime } from './shared'
 
 interface HeaderProps {
   state: OmegaState | null
   connected: boolean
+}
+
+const MODE_BADGE: Record<LiveMode, { text: string; bg: string; border: string; pulse: boolean }> = {
+  sim: { text: 'text-zinc-300', bg: 'bg-zinc-700/60', border: 'border-zinc-600', pulse: false },
+  testnet: { text: 'text-amber-300', bg: 'bg-amber-500/20', border: 'border-amber-500/50', pulse: true },
+  mainnet: { text: 'text-rose-300', bg: 'bg-rose-500/20', border: 'border-rose-500/50', pulse: true },
 }
 
 export function Header({ state, connected }: HeaderProps) {
@@ -16,6 +22,8 @@ export function Header({ state, connected }: HeaderProps) {
   const change = market?.changePct24h ?? 0
   const consensus = state?.signals.consensus
   const consensusStyle = consensus ? SIDE_STYLES[consensus.side] : null
+  const live = state?.live
+  const modeBadge = live ? MODE_BADGE[live.mode] : null
 
   return (
     <header className="sticky top-0 z-40 border-b border-zinc-800 bg-zinc-950/85 backdrop-blur supports-[backdrop-filter]:bg-zinc-950/70">
@@ -41,6 +49,15 @@ export function Header({ state, connected }: HeaderProps) {
             {connected ? 'ENGINE LIVE' : 'RECONNECTING…'}
           </span>
         </div>
+
+        {/* Mode badge (SIM / TESTNET / MAINNET) */}
+        {modeBadge && live && (
+          <div className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1 ${modeBadge.bg} ${modeBadge.border}`}>
+            <Power className={`h-3 w-3 ${modeBadge.text} ${modeBadge.pulse ? 'animate-pulse' : ''}`} />
+            <span className={`text-[10px] font-bold uppercase tracking-wider ${modeBadge.text}`}>{live.mode}</span>
+            {live.okxConnected && <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />}
+          </div>
+        )}
 
         {/* Market ticker */}
         {market && (

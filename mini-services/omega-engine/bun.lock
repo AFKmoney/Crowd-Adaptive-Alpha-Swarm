@@ -5,7 +5,9 @@
     "": {
       "name": "omega-engine",
       "dependencies": {
+        "@types/ws": "^8.18.1",
         "socket.io": "^4.8.3",
+        "ws": "^8.21.0",
       },
     },
   },
