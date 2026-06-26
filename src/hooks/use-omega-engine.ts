@@ -18,9 +18,11 @@ interface UseOmegaEngine {
     deflationActive: boolean
   }>
   compositeHistory: Array<{ ts: number; composite: number }>
+  candleHistory: Array<{ time: number; open: number; high: number; low: number; close: number }>
 }
 
 const MAX_WEIGHT_HISTORY = 120
+const MAX_CANDLES = 200
 
 export function useOmegaEngine(): UseOmegaEngine {
   const [state, setState] = useState<OmegaState | null>(null)
@@ -28,6 +30,7 @@ export function useOmegaEngine(): UseOmegaEngine {
   const [events, setEvents] = useState<OmegaEvent[]>([])
   const [weightHistory, setWeightHistory] = useState<UseOmegaEngine['weightHistory']>([])
   const [compositeHistory, setCompositeHistory] = useState<UseOmegaEngine['compositeHistory']>([])
+  const [candleHistory, setCandleHistory] = useState<UseOmegaEngine['candleHistory']>([])
   const socketRef = useRef<Socket | null>(null)
 
   useEffect(() => {
@@ -64,6 +67,20 @@ export function useOmegaEngine(): UseOmegaEngine {
         return next.slice(-MAX_WEIGHT_HISTORY)
       })
       setCompositeHistory(st.crowd.history)
+      // Build a synthetic candle per second from the price stream (open=prev close, high/low from sparkline delta)
+      setCandleHistory((prev) => {
+        const tsSec = Math.floor(st.ts / 1000)
+        const price = st.market.price
+        const last = prev[prev.length - 1]
+        if (last && last.time === tsSec) {
+          // update current candle
+          const updated = { ...last, close: price, high: Math.max(last.high, price), low: Math.min(last.low, price) }
+          return [...prev.slice(0, -1), updated]
+        }
+        const open = last ? last.close : price
+        const candle = { time: tsSec, open, high: Math.max(open, price), low: Math.min(open, price), close: price }
+        return [...prev, candle].slice(-MAX_CANDLES)
+      })
     })
 
     socket.on('omega:event', (ev: OmegaEvent) => {
@@ -88,5 +105,5 @@ export function useOmegaEngine(): UseOmegaEngine {
   // expose reconnect for manual retry button (unused but available)
   void reconnect
 
-  return { state, connected, events, weightHistory, compositeHistory }
+  return { state, connected, events, weightHistory, compositeHistory, candleHistory }
 }

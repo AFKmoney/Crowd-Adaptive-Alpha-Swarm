@@ -1,8 +1,18 @@
 // OMEGA Engine — simulated market microstructure
 // A regime-switching mean-reverting random walk for BTCUSDT that produces
 // believable trends, chops, and spikes so the crowd engine has something to overreact to.
+//
+// TITAN-1: extended to maintain true OHLC bars so ATR-14 (true range) can be computed.
 
 import type { Regime } from './types.ts'
+
+export interface OhlcBar {
+  ts: number
+  open: number
+  high: number
+  low: number
+  close: number
+}
 
 export interface MarketTick {
   ts: number
@@ -12,6 +22,12 @@ export interface MarketTick {
   rsi14: number // 0..100
   bbPos: number // bollinger position 0..1 (0 = lower band, 1 = upper)
   obi: number // order book imbalance -1..1
+  // TITAN-1: OHLC + ATR surfaced directly on the tick so agents / risk / sniper can read them.
+  bar: OhlcBar
+  prevClose: number
+  atr14Bps: number
+  atrPct: number
+  volatilityRegime: 'low' | 'normal' | 'high' | 'extreme'
 }
 
 const START_PRICE = 68000
@@ -35,6 +51,10 @@ export class MarketSim {
   private obi = 0
   private regime: Regime = 'calm_bull'
 
+  // TITAN-1: OHLC history for ATR-14 (true range)
+  private ohlc: OhlcBar[] = []
+  private atr14: number = 0 // in price units (raw ATR)
+
   setRegime(r: Regime) {
     this.regime = r
   }
@@ -44,6 +64,8 @@ export class MarketSim {
     this.ts = Date.now()
     const p = REGIME_PARAMS[this.regime]
 
+    const prevClose = this.price
+
     // Mean-reverting Ornstein-Uhlenbeck-ish component around a drifting mean
     const shock = gaussian() * p.vol
     const meanRevPull = (Math.log(START_PRICE) - Math.log(this.price)) * p.meanRev
@@ -51,12 +73,32 @@ export class MarketSim {
     this.ret = drift + shock
 
     // Occasional crowd-driven spike (3% chance of a larger move) — feeds extremes
+    let spike = 0
     if (Math.random() < 0.03) {
       const spikeDir = Math.random() < 0.5 ? -1 : 1
-      this.ret += spikeDir * (p.vol * (2.5 + Math.random() * 2))
+      spike = spikeDir * (p.vol * (2.5 + Math.random() * 2))
+      this.ret += spike
     }
 
     this.price = Math.max(100, this.price * Math.exp(this.ret))
+
+    // ---- Build OHLC bar (true range requires intrabar high/low) ----
+    // Open = prevClose, Close = new price. High/Low include a wick proportional
+    // to bar magnitude plus a small Gaussian so ATR captures true intrabar range.
+    const open = prevClose
+    const close = this.price
+    const wickMag = Math.abs(close - open) * (0.3 + Math.random() * 0.4) + this.price * p.vol * 0.4 * Math.abs(gaussian())
+    const high = Math.max(open, close) + wickMag * Math.random()
+    const low = Math.min(open, close) - wickMag * Math.random()
+    const bar: OhlcBar = { ts: this.ts, open, high: Math.max(high, close, open), low: Math.max(1, Math.min(low, close, open)), close }
+    this.ohlc.push(bar)
+    if (this.ohlc.length > 60) this.ohlc.shift()
+
+    // ---- ATR-14 (Wilder's smoothing of True Range) ----
+    this.atr14 = computeAtr14(this.ohlc, this.atr14)
+    const atrPct = this.atr14 > 0 ? (this.atr14 / this.price) * 100 : 0
+    const atr14Bps = atrPct * 100
+    const volatilityRegime = bucketVol(atrPct)
 
     this.bars.push(this.ret)
     if (this.bars.length > 40) this.bars.shift()
@@ -74,6 +116,7 @@ export class MarketSim {
   }
 
   tick(): MarketTick {
+    const atrPct = this.atr14 > 0 ? (this.atr14 / this.price) * 100 : 0
     return {
       ts: this.ts,
       price: this.price,
@@ -82,6 +125,11 @@ export class MarketSim {
       rsi14: rsi(this.prices, 14),
       bbPos: bollingerPos(this.prices, 20),
       obi: this.obi,
+      bar: this.ohlc[this.ohlc.length - 1] ?? { ts: this.ts, open: this.price, high: this.price, low: this.price, close: this.price },
+      prevClose: this.ohlc.length > 1 ? this.ohlc[this.ohlc.length - 2].close : this.price,
+      atr14Bps: Math.round(atrPct * 100 * 100) / 100,
+      atrPct: Math.round(atrPct * 10000) / 10000,
+      volatilityRegime: bucketVol(atrPct),
     }
   }
 
@@ -94,6 +142,51 @@ export class MarketSim {
     const first = this.prices[0]
     return ((this.price - first) / first) * 100
   }
+
+  /** OHLC history (last 60 bars) — used by the candlestick chart in the dashboard. */
+  ohlcHistory(): OhlcBar[] {
+    return this.ohlc.slice()
+  }
+}
+
+// ---- ATR (Wilder's smoothing) ----
+function trueRange(b: OhlcBar, prevClose: number): number {
+  return Math.max(
+    b.high - b.low,
+    Math.abs(b.high - prevClose),
+    Math.abs(b.low - prevClose),
+  )
+}
+
+function computeAtr14(ohlc: OhlcBar[], prevAtr: number): number {
+  if (ohlc.length < 2) return 0
+  // Wilder's: ATR = (prevATR * (n-1) + TR) / n
+  const period = 14
+  if (ohlc.length <= period) {
+    // simple average of TRs so far
+    let sum = 0
+    for (let i = 1; i < ohlc.length; i++) {
+      sum += trueRange(ohlc[i], ohlc[i - 1].close)
+    }
+    return sum / Math.max(1, ohlc.length - 1)
+  }
+  // Once we have enough bars, smooth recursively. Since we only keep 60 bars,
+  // recompute the smoothed ATR from the visible window to stay accurate.
+  const slice = ohlc.slice(-(period + 1))
+  let atr = trueRange(slice[1], slice[0].close)
+  for (let i = 1; i < slice.length - 1; i++) {
+    const tr = trueRange(slice[i + 1], slice[i].close)
+    atr = (atr * (period - 1) + tr) / period
+  }
+  // Blend with previous ATR for temporal continuity
+  return prevAtr > 0 ? atr * 0.5 + prevAtr * 0.5 : atr
+}
+
+function bucketVol(atrPct: number): 'low' | 'normal' | 'high' | 'extreme' {
+  if (atrPct < 0.4) return 'low'
+  if (atrPct < 1.2) return 'normal'
+  if (atrPct < 3.0) return 'high'
+  return 'extreme'
 }
 
 // ---- helpers ----

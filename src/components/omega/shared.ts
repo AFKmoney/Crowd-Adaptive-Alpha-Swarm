@@ -36,6 +36,19 @@ export const AGENT_BAR_COLOR: Record<AgentName, string> = {
   crowd: '#f0abfc', // fuchsia-300
 }
 
+export const VOL_REGIME_STYLES: Record<string, { label: string; text: string; bg: string; border: string }> = {
+  low: { label: 'LOW', text: 'text-emerald-300', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30' },
+  normal: { label: 'NORMAL', text: 'text-teal-300', bg: 'bg-teal-500/10', border: 'border-teal-500/30' },
+  high: { label: 'HIGH', text: 'text-amber-300', bg: 'bg-amber-500/10', border: 'border-amber-500/30' },
+  extreme: { label: 'EXTREME', text: 'text-rose-300', bg: 'bg-rose-500/10', border: 'border-rose-500/40' },
+}
+
+export const VENUE_COLORS: Record<string, string> = {
+  OKX: '#5eead4',
+  Binance: '#fcd34d',
+  Bybit: '#f0abfc',
+}
+
 export function fmtPrice(p: number): string {
   return p.toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 2 })
 }

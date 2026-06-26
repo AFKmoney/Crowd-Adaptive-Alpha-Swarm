@@ -1,9 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -29,4 +26,54 @@ model Post {
   authorId  String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ---- OMEGA / SkyTrader integration ----
+
+/// Exchange API credentials. Stored obfuscated (NOT plain-text) — the apiSecret
+/// is XOR-ciphered with a per-deploy key. For real mainnet, swap in a proper
+/// AES-256 envelope (e.g. node:crypto createCipheriv) before going live.
+model Credential {
+  id         String   @id @default(cuid())
+  exchange   String   @default("okx") // "okx" | "binance"
+  label      String   @default("default")
+  apiKey     String
+  apiSecret  String   // obfuscated at rest
+  passphrase String?  // OKX-specific, obfuscated at rest
+  testnet    Boolean  @default(true)
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([exchange, label])
+}
+
+/// One RL training run over synthetic + live scenarios.
+model TrainingRun {
+  id            String   @id @default(cuid())
+  startedAt     DateTime @default(now())
+  finishedAt    DateTime?
+  mode          String   @default("synthetic") // "synthetic" | "live" | "both"
+  scenariosJson String   // JSON array of scenario names covered
+  episodesDone  Int      @default(0)
+  totalEpisodes Int      @default(0)
+  status        String   @default("running") // "running" | "completed" | "stopped" | "failed"
+  // Per-agent final metrics, JSON: { trend: {sharpe, winRate, equity, maxDrawdown}, ... }
+  metricsJson   String?
+  summaryJson   String?
+
+  @@index([startedAt])
+}
+
+/// Equity curve snapshots for the Risk Aegis daily drawdown tracker.
+model EquitySnapshot {
+  id        String   @id @default(cuid())
+  ts        DateTime @default(now())
+  equity    Float
+  drawdown  Float    // fraction from daily start
+  dayKey    String   // YYYY-MM-DD, for daily reset grouping
+  source    String   @default("sim") // "sim" | "live"
+
+  @@index([dayKey])
+  @@index([ts])
 }

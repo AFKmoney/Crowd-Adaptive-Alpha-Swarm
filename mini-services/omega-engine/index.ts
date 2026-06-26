@@ -1,11 +1,13 @@
-// OMEGA Engine — main entry point (mini-service, port 3003)
+// OMEGA Engine — main entry point (mini-service, port 3003) — TITAN-1 rebuild
 //
 // Runs the continuous OMEGA simulation loop and broadcasts live state over socket.io.
-// This is the backend that powers the dashboard's visualization of the dynamic weight
-// reconfiguration feature.
+// Extended for Project TITAN: emits the FULL extended OmegaState contract (ATR,
+// Liquidation Sniper, Order Book, Toxic Flow, Venues/Domino, Execution Blade) plus
+// all new event types (oi_cascade, spoof_detected, toxic_mm_flee, domino_strike,
+// maker_grid_deploy/fill/complete, liquidation_snipe, wall_detected).
 //
-// Per the worklog contract, the client connects to io("/?XTransformPort=3003") and
-// receives `omega:state` (full snapshot ~1s) and `omega:event` (single new events).
+// Per the worklog contract (TITAN-0), the client connects to io("/?XTransformPort=3003")
+// and receives `omega:state` (full snapshot ~1s) and `omega:event` (single new events).
 
 import { createServer } from 'http'
 import { Server } from 'socket.io'
@@ -15,6 +17,13 @@ import { RegimeDetector } from './regime-detector.ts'
 import { RegimeWeightRouter } from './regime-router.ts'
 import { ALL_AGENTS } from './agents.ts'
 import { debate } from './debate-chamber.ts'
+import { RiskAegis } from './risk-aegis.ts'
+import { AtrTracker } from './indicators.ts'
+import { LiquidationSniper } from './liquidation-sniper.ts'
+import { OrderBookSim } from './order-book.ts'
+import { ToxicFlow } from './toxic-flow.ts'
+import { VenuesDomino } from './venues.ts'
+import { ExecutionBlade } from './execution-blade.ts'
 import type { OmegaState, OmegaEvent, EventType } from './types.ts'
 
 const PORT = 3003
@@ -38,6 +47,13 @@ const market = new MarketSim()
 const crowd = new CrowdEngine()
 const regimeDet = new RegimeDetector()
 const router = new RegimeWeightRouter()
+const risk = new RiskAegis()
+const atr = new AtrTracker()
+const sniper = new LiquidationSniper()
+const orderBook = new OrderBookSim()
+const toxic = new ToxicFlow()
+const venues = new VenuesDomino()
+const blade = new ExecutionBlade()
 
 const startedAt = Date.now()
 const events: OmegaEvent[] = []
@@ -58,7 +74,7 @@ function logEvent(type: EventType, message: string, details: Record<string, unkn
 }
 
 // Seed an initial event
-logEvent('regime_change', 'OMEGA engine online — regime calm_bull, crowd at rest.', {
+logEvent('regime_change', 'OMEGA engine online — TITAN-1 modules armed (ATR / Sniper / OrderBook / Toxic / Domino / MakerGrid). Regime calm_bull, crowd at rest.', {
   regime: 'calm_bull',
 })
 
@@ -76,7 +92,7 @@ function tick() {
     })
   }
 
-  // Crowd engine (second axis — the new feature)
+  // Crowd engine (second axis — the original feature)
   const prevExtreme = crowd.extreme
   crowd.update(marketTick)
   const crowdState = crowd.state()
@@ -97,7 +113,7 @@ function tick() {
     })
   }
 
-  // RegimeWeightRouter — DYNAMIC reconfiguration (the feature)
+  // RegimeWeightRouter — DYNAMIC reconfiguration
   const reconfig = router.compute(regimeDet.currentRegime, crowdState)
   if (reconfig.changed) {
     stats.reconfigCount++
@@ -111,8 +127,38 @@ function tick() {
     }
   }
 
-  // Alpha swarm — each agent evaluates
-  const ctx = { tick: marketTick, crowd: crowdState }
+  // ---- TITAN-1 modules (must run BEFORE agents so agents can read fresh state) ----
+  // 1. ATR
+  const atrState = atr.update(marketTick)
+  // 2. Liquidation Sniper
+  const sniperEvents = sniper.update(marketTick, crowdState)
+  for (const se of sniperEvents) logEvent(se.type, se.message, se.details)
+  // 3. Order Book + Spoofing
+  const obEvents = orderBook.update(marketTick, crowdState)
+  for (const oe of obEvents) logEvent(oe.type, oe.message, oe.details)
+  // 4. Toxic Flow
+  const toxicEvents = toxic.update(marketTick)
+  for (const te of toxicEvents) logEvent(te.type, te.message, te.details)
+  // 5. Venues + Domino
+  const dominoEvents = venues.update(marketTick)
+  for (const de of dominoEvents) logEvent(de.type, de.message, de.details)
+
+  const liquidationState = sniper.state()
+  const orderBookState = orderBook.state()
+  const toxicState = toxic.state()
+  const venueState = venues.state()
+
+  // Alpha swarm — each agent evaluates with the FULL extended context
+  const ctx = {
+    tick: marketTick,
+    crowd: crowdState,
+    atr: atrState,
+    liquidations: liquidationState,
+    orderBook: orderBookState,
+    toxicFlow: toxicState,
+    toxicPressureDir: toxic.pressureDirection,
+    domino: venueState.domino,
+  }
   const rawSignals = ALL_AGENTS.map((a) => a.evaluate(ctx))
 
   // Debate chamber — aggregate with effective weights
@@ -120,7 +166,6 @@ function tick() {
 
   // Log consensus transitions & conflict deferrals
   if (consensus.conflict && consensus.quorumMet && consensus.side === 'FLAT') {
-    // throttle: only count when voteStd is high
     if (consensus.voteStd > 0.6) {
       stats.deferredCount++
       logEvent('conflict_defer', `Debate DEFERRED — agent conflict (voteStd ${consensus.voteStd.toFixed(2)} > 0.55). No trade.`, {
@@ -140,9 +185,39 @@ function tick() {
     lastConsensusSide = null
   }
 
+  // ---- Execution Blade: process fills on the ACTIVE grid BEFORE risk-aegis TP/SL ----
+  const bladeEvents = blade.update(marketTick.price, sniper.cascadeActive, marketTick.ts)
+  for (const be of bladeEvents) {
+    logEvent(be.type, be.message, be.details)
+    // If a tier filled during an active cascade, mark the wick as captured + snipe event
+    if (be.type === 'maker_grid_fill' && sniper.cascadeActive) {
+      const fillPrice = (be.details.fillPrice as number) ?? marketTick.price
+      const side = (be.details.side as 'BUY' | 'SELL') ?? 'BUY'
+      const snipeEv = sniper.recordSnipe(side, fillPrice)
+      if (snipeEv) logEvent(snipeEv.type, snipeEv.message, snipeEv.details)
+    }
+  }
+
+  // ---- Layer 4: Risk Aegis (hors-dogme + Kelly + dynamic ATR TP/SL + maker-grid handoff) ----
+  const riskCtx = {
+    atr14Bps: atrState.atr14Bps,
+    volatilityRegime: atrState.volatilityRegime,
+    cascadeActive: sniper.cascadeActive,
+    executionBlade: blade,
+  }
+  const { state: riskState, events: riskEvents } = risk.evaluate(
+    consensus,
+    crowdState,
+    marketTick.price,
+    riskCtx,
+  )
+  for (const re of riskEvents) {
+    logEvent(re.type, re.message, re.details)
+  }
+
   stats.uptime = Math.floor((Date.now() - startedAt) / 1000)
 
-  // Build & broadcast full state
+  // Build & broadcast full extended state
   const state: OmegaState = {
     ts: Date.now(),
     regime: regimeDet.state(),
@@ -157,6 +232,15 @@ function tick() {
     signals: { symbol: 'BTCUSDT', agents: signals, consensus },
     events: events.slice(0, MAX_EVENTS),
     stats: { ...stats },
+    risk: riskState,
+    // TITAN-1 extended fields
+    atr: atrState,
+    liquidations: liquidationState,
+    orderBook: orderBookState,
+    toxicFlow: toxicState,
+    venues: venueState.venues,
+    domino: venueState.domino,
+    execution: blade.state(),
   }
 
   io.emit('omega:state', state)
