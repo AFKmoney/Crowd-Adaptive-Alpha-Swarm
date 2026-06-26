@@ -52,3 +52,27 @@ prompt
 server.log
 # Skills directory
 /skills/
+
+# ---- OMEGA: secrets & local data ----
+# Database (may contain saved OKX credentials — NEVER commit)
+/db/
+*.db
+*.db-journal
+
+# Upload folder (user conversation logs / private docs)
+/upload/
+
+# Tool results & temp files
+/tool-results/
+/tmp/
+/.zscripts/
+
+# Prisma generated client (regenerated on install)
+/node_modules/.prisma/
+
+# Build artifacts
+/.next/
+/mini-services/*/node_modules/
+
+# OS files
+Thumbs.db
