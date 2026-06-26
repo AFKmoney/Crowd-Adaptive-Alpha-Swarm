@@ -102,6 +102,23 @@ export type EventType =
   | 'wall_detected'
   // Time-Bandit / Boule de Cristal
   | 'time_bandit_strike'
+  // Phase 4 — Divine Level
+  | 'wall_breaker_strike'
+  | 'ghost_protocol_sweep'
+  | 'ghost_protocol_rebound'
+  | 'symphony_vector_strike'
+  | 'poison_pill_strike'
+  // Phase 5 — Niveau Supérieur
+  | 'chronos_parasite_strike'
+  | 'gamma_squeeze_strike'
+  | 'event_horizon_strike'
+  // Level 6 — Architecture Quantique
+  | 'iceberg_sonar_ping'
+  | 'iceberg_sonar_mapped'
+  | 'cex_inflow_vampire_strike'
+  | 'cross_pair_vacuum_strike'
+  | 'engine_overload_strike'
+  | 'correlated_domino_strike'
 
 export interface OmegaEvent {
   id: string
@@ -313,6 +330,108 @@ export interface LiveStatus {
   liveTrades: number // cumulative real orders placed
 }
 
+// ============ Phase 4 — Divine Level ============
+
+// Wall Breaker — detects retail buyers exhausting against an invisible resistance
+// wall. When buy pressure is high but price can't break through, SELL into the
+// buyers' backs (they're trapped, about to capitulate).
+export interface WallBreakerState {
+  active: boolean
+  buyPressure: number // 0..1 — how hard retail is buying
+  priceResistance: number // 0..1 — how much the wall is holding
+  exhaustion: number // 0..1 — combined exhaustion signal
+  side: Side // SELL when active
+  confidence: number
+  takeProfitBps: number // ~54bps (quick scalp into the trapped buyers)
+  strikeCount: number
+  lastStrike: { ts: number; price: number; takeProfitBps: number } | null
+}
+
+// Ghost Protocol (Liquidity Vacuum) — when MMs disconnect (spread widens >0.2% at
+// a news event), the book is empty for ~3s. Sweep market orders +2%, sell limit
+// on the rebound when MMs reconnect.
+export interface GhostProtocolState {
+  active: boolean // vacuum window open
+  spreadBps: number // current bid/ask spread
+  spreadThresholdBps: number // 20bps = 0.2%
+  newsTrigger: boolean // a macro news event just fired
+  vacuumAgeMs: number // how long the vacuum has been open
+  vacuumDurationMs: number // typical ~3000ms
+  swept: boolean // already swept the book this vacuum
+  rebondTargetPct: number // +2% sweep target
+  strikeCount: number
+  lastStrike: { ts: number; sweptUsd: number; reboundUsd: number } | null
+}
+
+// Symphony Vector — BTC is the conductor, altcoins the musicians. When BTC funding
+// + CVD shifts, deploy maker-grid on the 5 most liquid altcoins before HFT aligns
+// them (30-100ms latency arbitrage).
+export interface SymphonyVectorState {
+  active: boolean
+  btcOracleSignal: number // -1..1 (BTC funding + CVD composite)
+  altcoins: Array<{
+    symbol: string
+    price: number
+    expectedMovePct: number // amplified 3-5x vs BTC
+    lagMs: number // HFT alignment latency
+    gridDeployed: boolean
+  }>
+  strikeCount: number
+  lastStrike: { ts: number; altcoins: string[]; btcSignal: number } | null
+}
+
+// Poison Pill (MEV / On-Chain Shadowing) — monitor the mempool for whale DEX sales.
+// A 50M USDC whale sale takes ~400ms to mine; the CEX reacts ~1s later. Short OKX
+// before the CeFi arbitrage bots bridge the DeFi→CeFi gap.
+export interface PoisonPillState {
+  active: boolean
+  mempoolConnected: boolean // RPC node connected
+  pendingWhaleTx: {
+    hash: string
+    chain: 'solana' | 'ethereum'
+    dex: string
+    tokenIn: string
+    tokenOut: string
+    amountUsd: number
+    detectedAt: number
+    expectedMineMs: number // ~400ms
+    cexReactMs: number // ~1000ms
+  } | null
+  recentStrikes: Array<{ ts: number; amountUsd: number; chain: string; edgePct: number }>
+  strikeCount: number
+}
+
+// ============ Phase 6 — Quantum Arsenal (8 concepts) ============
+
+export interface QuantumWeaponState {
+  name: string
+  active: boolean
+  confidence: number
+  takeProfitBps: number
+  side: Side
+  detail: string // human-readable detail
+  strikeCount: number
+}
+
+export interface QuantumArsenalState {
+  // 1. Chronos Parasite — sniff institutional TWAP rhythm, front-run it
+  chronosParasite: QuantumWeaponState & { twapDetected: boolean; twapIntervalMs: number }
+  // 2. Gamma Squeeze — options MM negative gamma, buy spot ahead of forced covering
+  gammaSqueeze: QuantumWeaponState & { gammaExposure: number; optionsMmCovering: boolean }
+  // 3. Event Horizon — force the cascade by selling brutally, TP at the bottom
+  eventHorizon: QuantumWeaponState & { cascadeForced: boolean; priceImpactBps: number }
+  // 4. Iceberg Sonar — dust-order lidar to map hidden iceberg orders
+  icebergSonar: QuantumWeaponState & { hiddenSizeUsd: number; surfaceSizeUsd: number; icebergRatio: number }
+  // 5. CEX Inflow Vampire — cold wallet → exchange deposit, short before credited
+  cexInflowVampire: QuantumWeaponState & { inflowUsd: number; confirmationsRemaining: number }
+  // 6. Cross-Pair Liquidity Vacuum — DOGE pump drains ETH liquidity, short ETH
+  crossPairVacuum: QuantumWeaponState & { pumpSymbol: string; drainedSymbol: string; liquidityDrainPct: number }
+  // 7. Exchange Engine Overload — API latency spike, fade trapped retail
+  exchangeOverload: QuantumWeaponState & { apiLatencyMs: number; latencyThresholdMs: number }
+  // 8. Correlated Domino Matrix — SOL drops → DeFi liquidates WIF, short WIF
+  correlatedDomino: QuantumWeaponState & { triggerSymbol: string; targetSymbol: string; collateralAtRiskUsd: number }
+}
+
 export interface OmegaState {
   ts: number
   regime: RegimeState
@@ -336,4 +455,11 @@ export interface OmegaState {
   timeBandit: TimeBanditState
   // Live mode
   live: LiveStatus
+  // Phase 4 — Divine Level
+  wallBreaker: WallBreakerState
+  ghostProtocol: GhostProtocolState
+  symphonyVector: SymphonyVectorState
+  poisonPill: PoisonPillState
+  // Phase 6 — Quantum Arsenal
+  quantumArsenal: QuantumArsenalState
 }

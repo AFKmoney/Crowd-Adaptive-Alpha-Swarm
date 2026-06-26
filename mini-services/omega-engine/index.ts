@@ -28,6 +28,11 @@ import { CrystalBall } from './crystal-ball.ts'
 import { TimeBandit } from './time-bandit.ts'
 import { OkxClient, INST_ID, type OkxMode } from './okx-client.ts'
 import { OkxWebSocket, type OkxLiveTick } from './okx-ws.ts'
+import { WallBreaker } from './wall-breaker.ts'
+import { GhostProtocol } from './ghost-protocol.ts'
+import { SymphonyVector } from './symphony-vector.ts'
+import { PoisonPill } from './poison-pill.ts'
+import { QuantumArsenal } from './quantum-arsenal.ts'
 import type { OmegaState, OmegaEvent, EventType, LiveMode, LiveStatus } from './types.ts'
 
 const PORT = 3003
@@ -60,6 +65,11 @@ const venues = new VenuesDomino()
 const blade = new ExecutionBlade()
 const crystalBall = new CrystalBall()
 const timeBandit = new TimeBandit()
+const wallBreaker = new WallBreaker()
+const ghostProtocol = new GhostProtocol()
+const symphonyVector = new SymphonyVector()
+const poisonPill = new PoisonPill()
+const quantumArsenal = new QuantumArsenal()
 const okxClient = new OkxClient()
 const okxWs = new OkxWebSocket()
 
@@ -388,6 +398,29 @@ function tick() {
 
   stats.uptime = Math.floor((Date.now() - startedAt) / 1000)
 
+  // ---- Phase 4/6 — Divine + Quantum modules ----
+  // Wall Breaker: retail exhaustion against invisible wall
+  const wbStrike = wallBreaker.evaluate(marketTick, crowdState, orderBookState)
+  if (wbStrike) {
+    wallBreaker.recordStrike(wbStrike, marketTick.price)
+    logEvent('wall_breaker_strike',
+      `🧱 WALL BREAKER — Retail buyers exhausting against invisible wall (exhaustion ${wbStrike.exhaustion.toFixed(2)}, buy pressure ${wallBreaker.state().buyPressure.toFixed(2)}). SELL into trapped buyers @ ${(wbStrike.confidence * 100).toFixed(0)}% conf, TP ${wbStrike.takeProfitBps}bps.`,
+      { exhaustion: wbStrike.exhaustion, side: wbStrike.side, confidence: wbStrike.confidence, tp: wbStrike.takeProfitBps },
+    )
+  }
+  // Ghost Protocol: liquidity vacuum during news events
+  const ghostEvents = ghostProtocol.update(marketTick, crowdState, orderBookState, atrState.atr14Bps)
+  for (const ge of ghostEvents) logEvent(ge.type, ge.message, ge.details)
+  // Symphony Vector: BTC oracle → altcoin maker-grids
+  const symphonyEvents = symphonyVector.update(marketTick, crowdState, atrState.atr14Bps)
+  for (const se of symphonyEvents) logEvent(se.type, se.message, se.details)
+  // Poison Pill: mempool whale DEX sale → short CEX
+  const poisonEvents = poisonPill.update(marketTick, atrState.atr14Bps)
+  for (const pe of poisonEvents) logEvent(pe.type, pe.message, pe.details)
+  // Quantum Arsenal: 8 Level-6 concepts
+  const quantumEvents = quantumArsenal.update(marketTick, crowdState, atrState.atr14Bps, sniper.cascadeActive)
+  for (const qe of quantumEvents) logEvent(qe.type, qe.message, qe.details)
+
   // Build & broadcast full extended state
   const liveStatus: LiveStatus = {
     mode: currentMode,
@@ -430,6 +463,13 @@ function tick() {
     timeBandit: timeBandit.state(crystalState),
     // Live mode
     live: liveStatus,
+    // Phase 4 — Divine Level
+    wallBreaker: wallBreaker.state(),
+    ghostProtocol: ghostProtocol.state(),
+    symphonyVector: symphonyVector.state(),
+    poisonPill: poisonPill.state(),
+    // Phase 6 — Quantum Arsenal
+    quantumArsenal: quantumArsenal.state(),
   }
 
   io.emit('omega:state', state)

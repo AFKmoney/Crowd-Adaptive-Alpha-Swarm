@@ -32,15 +32,40 @@ const EVENT_META: Record<EventType, { icon: React.ReactNode; text: string; borde
   maker_grid_complete: { icon: <CheckCircle2 className="h-3.5 w-3.5" />, text: 'text-teal-300', border: 'border-l-teal-500', bg: 'bg-teal-500/10', glow: true },
   wall_detected: { icon: <Layers className="h-3.5 w-3.5" />, text: 'text-amber-300', border: 'border-l-amber-500', bg: 'bg-amber-500/5' },
   time_bandit_strike: { icon: <TimerIcon />, text: 'text-amber-200', border: 'border-l-amber-400', bg: 'bg-amber-500/15', glow: true },
+  // Phase 4 — Divine Level
+  wall_breaker_strike: { icon: <SkullIcon />, text: 'text-amber-300', border: 'border-l-amber-500', bg: 'bg-amber-500/10', glow: true },
+  ghost_protocol_sweep: { icon: <GhostIcon />, text: 'text-zinc-200', border: 'border-l-zinc-400', bg: 'bg-zinc-500/10', glow: true },
+  ghost_protocol_rebound: { icon: <GhostIcon />, text: 'text-emerald-300', border: 'border-l-emerald-500', bg: 'bg-emerald-500/10', glow: true },
+  symphony_vector_strike: { icon: <SymIcon />, text: 'text-teal-300', border: 'border-l-teal-500', bg: 'bg-teal-500/10', glow: true },
+  poison_pill_strike: { icon: <PillIcon />, text: 'text-fuchsia-300', border: 'border-l-fuchsia-500', bg: 'bg-fuchsia-500/10', glow: true },
+  // Phase 5 + Level 6 — Quantum Arsenal
+  chronos_parasite_strike: { icon: <ClockIcon />, text: 'text-sky-300', border: 'border-l-sky-500', bg: 'bg-sky-500/10', glow: true },
+  gamma_squeeze_strike: { icon: <GammaIcon />, text: 'text-orange-300', border: 'border-l-orange-500', bg: 'bg-orange-500/10', glow: true },
+  event_horizon_strike: { icon: <HorizonIcon />, text: 'text-rose-300', border: 'border-l-rose-500', bg: 'bg-rose-500/15', glow: true },
+  iceberg_sonar_ping: { icon: <RadarIcon />, text: 'text-cyan-300', border: 'border-l-cyan-500', bg: 'bg-cyan-500/5' },
+  iceberg_sonar_mapped: { icon: <RadarIcon />, text: 'text-cyan-200', border: 'border-l-cyan-400', bg: 'bg-cyan-500/10', glow: true },
+  cex_inflow_vampire_strike: { icon: <VampireIcon />, text: 'text-red-300', border: 'border-l-red-500', bg: 'bg-red-500/10', glow: true },
+  cross_pair_vacuum_strike: { icon: <VacuumIcon />, text: 'text-indigo-300', border: 'border-l-indigo-500', bg: 'bg-indigo-500/10', glow: true },
+  engine_overload_strike: { icon: <OverloadIcon />, text: 'text-yellow-300', border: 'border-l-yellow-500', bg: 'bg-yellow-500/10', glow: true },
+  correlated_domino_strike: { icon: <DominoIcon />, text: 'text-purple-300', border: 'border-l-purple-500', bg: 'bg-purple-500/10', glow: true },
+  quantum_strike: { icon: <QuantumIcon />, text: 'text-violet-200', border: 'border-l-violet-400', bg: 'bg-violet-500/15', glow: true },
 }
 
-function TimerIcon() {
-  return <span className="text-sm leading-none">⏳</span>
-}
-
-function FlameIcon() {
-  return <span className="text-base leading-none">🔥</span>
-}
+function TimerIcon() { return <span className="text-sm leading-none">⏳</span> }
+function FlameIcon() { return <span className="text-base leading-none">🔥</span> }
+function SkullIcon() { return <span className="text-sm leading-none">🧱</span> }
+function GhostIcon() { return <span className="text-sm leading-none">👻</span> }
+function SymIcon() { return <span className="text-sm leading-none">🎼</span> }
+function PillIcon() { return <span className="text-sm leading-none">💊</span> }
+function ClockIcon() { return <span className="text-sm leading-none">⏱</span> }
+function GammaIcon() { return <span className="text-sm leading-none">⚡</span> }
+function HorizonIcon() { return <span className="text-sm leading-none">🕳</span> }
+function RadarIcon() { return <span className="text-sm leading-none">📡</span> }
+function VampireIcon() { return <span className="text-sm leading-none">🧛</span> }
+function VacuumIcon() { return <span className="text-sm leading-none">🌀</span> }
+function OverloadIcon() { return <span className="text-sm leading-none">🖥</span> }
+function DominoIcon() { return <span className="text-sm leading-none">🀫</span> }
+function QuantumIcon() { return <span className="text-sm leading-none">🌌</span> }
 
 export function EventLog({ events }: EventLogProps) {
   return (

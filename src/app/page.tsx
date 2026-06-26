@@ -16,6 +16,7 @@ import { RiskPanel } from '@/components/omega/risk-panel'
 import { ExecutionPanel } from '@/components/omega/execution-panel'
 import { CrystalBallPanel } from '@/components/omega/crystal-ball-panel'
 import { LivePanel } from '@/components/omega/live-panel'
+import { DivineArsenalPanel } from '@/components/omega/divine-arsenal-panel'
 import { Sparkles } from 'lucide-react'
 
 export default function Home() {
@@ -43,7 +44,7 @@ export default function Home() {
           <div className="mx-auto flex max-w-[1700px] items-center gap-2 px-4 py-2 sm:px-6">
             <Sparkles className="h-3.5 w-3.5 shrink-0 text-fuchsia-400" />
             <p className="text-[11px] leading-snug text-zinc-400">
-              <span className="font-semibold text-zinc-200">PROJECT TITAN</span> — ⏳ Time-Bandit (Boule de Cristal) · Liquidation Sniper · Maker-Grid · ATR-dynamic TP/SL · Order Book Wall/Spoofing · Toxic Flow Vampire · Cross-Exchange Domino · Hors-Dogme Override
+              <span className="font-semibold text-zinc-200">PROJECT TITAN</span> — ⏳ Time-Bandit · 🧱 Wall Breaker · 👻 Ghost Protocol · 🎼 Symphony Vector · 💊 Poison Pill · ⏱ Chronos Parasite · ⚡ Gamma Squeeze · 🕳 Event Horizon · 📡 Iceberg Sonar · 🧛 CEX Vampire · 🌀 Cross-Pair Vacuum · 🖥 Engine Overload · 🀫 Correlated Domino
             </p>
           </div>
         </div>
@@ -92,7 +93,20 @@ export default function Home() {
             {state ? <ExecutionPanel exec={state.execution} /> : <Skeleton className="h-[300px]" />}
           </div>
 
-          {/* Row 5 — Event log full width */}
+          {/* Row 5 — Divine Arsenal (12 weapons: Phase 4 + 5 + Level 6) */}
+          {state ? (
+            <DivineArsenalPanel
+              wallBreaker={state.wallBreaker}
+              ghostProtocol={state.ghostProtocol}
+              symphonyVector={state.symphonyVector}
+              poisonPill={state.poisonPill}
+              quantumArsenal={state.quantumArsenal}
+            />
+          ) : (
+            <Skeleton className="h-[280px]" />
+          )}
+
+          {/* Row 6 — Event log full width */}
           <EventLog events={events} />
         </main>
 

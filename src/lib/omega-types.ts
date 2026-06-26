@@ -34,6 +34,24 @@ export type EventType =
   | 'maker_grid_complete'
   | 'wall_detected'
   | 'time_bandit_strike'
+  // Phase 4 — Divine Level
+  | 'wall_breaker_strike'
+  | 'ghost_protocol_sweep'
+  | 'ghost_protocol_rebound'
+  | 'symphony_vector_strike'
+  | 'poison_pill_strike'
+  // Phase 5 — Niveau Supérieur
+  | 'chronos_parasite_strike'
+  | 'gamma_squeeze_strike'
+  | 'event_horizon_strike'
+  // Level 6 — Architecture Quantique
+  | 'iceberg_sonar_ping'
+  | 'iceberg_sonar_mapped'
+  | 'cex_inflow_vampire_strike'
+  | 'cross_pair_vacuum_strike'
+  | 'engine_overload_strike'
+  | 'correlated_domino_strike'
+  | 'quantum_strike'
 
 export interface MarketState {
   symbol: string
@@ -309,6 +327,88 @@ export interface LiveStatus {
   liveTrades: number
 }
 
+// ---- Phase 4 — Divine Level ----
+
+export interface WallBreakerState {
+  active: boolean
+  buyPressure: number
+  priceResistance: number
+  exhaustion: number
+  side: Side
+  confidence: number
+  takeProfitBps: number
+  strikeCount: number
+  lastStrike: { ts: number; price: number; takeProfitBps: number } | null
+}
+
+export interface GhostProtocolState {
+  active: boolean
+  spreadBps: number
+  spreadThresholdBps: number
+  newsTrigger: boolean
+  vacuumAgeMs: number
+  vacuumDurationMs: number
+  swept: boolean
+  rebondTargetPct: number
+  strikeCount: number
+  lastStrike: { ts: number; sweptUsd: number; reboundUsd: number } | null
+}
+
+export interface SymphonyVectorState {
+  active: boolean
+  btcOracleSignal: number
+  altcoins: Array<{
+    symbol: string
+    price: number
+    expectedMovePct: number
+    lagMs: number
+    gridDeployed: boolean
+  }>
+  strikeCount: number
+  lastStrike: { ts: number; altcoins: string[]; btcSignal: number } | null
+}
+
+export interface PoisonPillState {
+  active: boolean
+  mempoolConnected: boolean
+  pendingWhaleTx: {
+    hash: string
+    chain: 'solana' | 'ethereum'
+    dex: string
+    tokenIn: string
+    tokenOut: string
+    amountUsd: number
+    detectedAt: number
+    expectedMineMs: number
+    cexReactMs: number
+  } | null
+  recentStrikes: Array<{ ts: number; amountUsd: number; chain: string; edgePct: number }>
+  strikeCount: number
+}
+
+// ---- Phase 5 + Level 6 — Quantum Arsenal ----
+
+export interface QuantumWeaponState {
+  name: string
+  active: boolean
+  confidence: number
+  takeProfitBps: number
+  side: Side
+  detail: string
+  strikeCount: number
+}
+
+export interface QuantumArsenalState {
+  chronosParasite: QuantumWeaponState & { twapDetected: boolean; twapIntervalMs: number }
+  gammaSqueeze: QuantumWeaponState & { gammaExposure: number; optionsMmCovering: boolean }
+  eventHorizon: QuantumWeaponState & { cascadeForced: boolean; priceImpactBps: number }
+  icebergSonar: QuantumWeaponState & { hiddenSizeUsd: number; surfaceSizeUsd: number; icebergRatio: number }
+  cexInflowVampire: QuantumWeaponState & { inflowUsd: number; confirmationsRemaining: number }
+  crossPairVacuum: QuantumWeaponState & { pumpSymbol: string; drainedSymbol: string; liquidityDrainPct: number }
+  exchangeOverload: QuantumWeaponState & { apiLatencyMs: number; latencyThresholdMs: number }
+  correlatedDomino: QuantumWeaponState & { triggerSymbol: string; targetSymbol: string; collateralAtRiskUsd: number }
+}
+
 export interface OmegaState {
   ts: number
   regime: RegimeState
@@ -329,4 +429,9 @@ export interface OmegaState {
   crystalBall: CrystalBallState
   timeBandit: TimeBanditState
   live: LiveStatus
+  wallBreaker: WallBreakerState
+  ghostProtocol: GhostProtocolState
+  symphonyVector: SymphonyVectorState
+  poisonPill: PoisonPillState
+  quantumArsenal: QuantumArsenalState
 }
