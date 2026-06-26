@@ -1,0 +1,441 @@
+     1→===== PAGE 1 =====
+     2→OMEGA
+     3→OMEGA
+     4→Autonomous Multi-Modal AI Hedge Fund Entity
+     5→A self-evolving, multi-agent trading system integrating order book microstructure, on-chain
+     6→analytics, global macro feeds, real-time news NLP, social sentiment, and asymmetric risk
+     7→management.
+     8→OMEGA Quantitative Research
+     9→Architecture Whitepaper v1.0 / June 2026
+    10→OMEGA Quantitative Research / Autonomous Trading Systems
+    11→
+    12→===== PAGE 2 =====
+    13→OMEGA / Autonomous Multi-Modal AI Hedge Fund Entity Architecture Whitepaper
+    14→Table of Contents
+    15→1. Executive Summary
+    16→2. System Architecture Overview
+    17→2.1 Layered Design Philosophy
+    18→2.2 Event Flow and Data Pipeline
+    19→3. Layer 1 — Data Nexus
+    20→3.1 Real-Time Ingestion
+    21→3.2 Multi-Modal Data Sources
+    22→3.3 Kafka Event Bus
+    23→3.4 Vector Store for RAG
+    24→4. Layer 2 — Alpha Swarm
+    25→4.1 PPO Agent (The Quant)
+    26→4.2 LLM Macro Agent
+    27→4.3 Statistical Arbitrage Agent
+    28→4.4 Debate Chamber (Mixture of Experts)
+    29→5. Layer 3 — Market Regime Detector
+    30→6. Layer 4 — Risk Aegis
+    31→6.1 Kelly Criterion Position Sizing
+    32→6.2 Monte Carlo Drawdown Engine
+    33→6.3 Kill Switch
+    34→6.4 Portfolio Heat Tracker
+    35→7. Layer 5 — Execution Blade
+    36→8. Layer 6 — Meta-Cognition Core
+    37→9. Reinforcement Learning Environment
+    38→10. Production Deployment
+    39→11. Risk Disclosures and Disclaimer
+    40→— 2 —
+    41→
+    42→===== PAGE 3 =====
+    43→OMEGA / Autonomous Multi-Modal AI Hedge Fund Entity Architecture Whitepaper
+    44→1. Executive Summary
+    45→OMEGA is an institutional-grade, autonomous trading system designed to maximize absolute return while
+    46→strictly controlling drawdown through asymmetric risk management. Unlike traditional algorithmic trading
+    47→bots that rely on a single technical indicator or a single machine learning model, OMEGA is structured as an
+    48→autonomous organism with six distinct functional layers, each owning a specific concern and communicating
+    49→with the next layer through a strict event-driven contract.
+    50→The system ingests every market-informative signal available: L2/L3 order book microstructure from
+    51→Binance, on-chain whale movements via Etherscan, macroeconomic indicators from the Federal Reserve
+    52→Economic Data (FRED) service, and real-time news from public RSS feeds with LLM-driven sentiment
+    53→scoring. A Mixture-of-Experts (MoE) architecture in the Alpha Swarm layer combines a PyTorch PPO agent
+    54→specialized in trend capture, a second PPO agent specialized in mean reversion, an LLM macro economist
+    55→that reads narrative context, and a statistical arbitrage agent that monitors cointegration between asset pairs.
+    56→A Debate Chamber meta-agent aggregates their views through a weighted vote with explicit conflict
+    57→detection.
+    58→Survival is the system's primary directive. The Risk Aegis layer sits between signal generation and order
+    59→execution and enforces: fractional Kelly position sizing with asymmetric loss-streak penalties, real-time
+    60→Monte Carlo drawdown probability estimation (10,000 paths per second), a hard-coded kill switch that
+    61→latches on latency spikes, API errors, flash crashes, or maximum drawdown breaches, and a
+    62→correlation-aware portfolio heat tracker that prevents over-concentration in correlated exposures. The
+    63→Execution Blade uses reinforcement learning to optimize between TWAP, VWAP, and iceberg execution
+    64→algorithms based on live order-book conditions. Finally, the Meta-Cognition layer performs LLM-driven
+    65→trade autopsy, online model retraining, and Darwinian genetic mutation of underperforming agents — closing
+    66→the self-improvement loop.
+    67→This whitepaper documents the architecture, design tradeoffs, and production deployment considerations for
+    68→OMEGA. The accompanying codebase is a complete, runnable implementation: 53 Python files across the
+    69→six layers, a PyTorch PPO training loop, a vectorized NumPy/Pandas backtest engine, real Binance
+    70→WebSocket and REST API integration, and a docker-compose stack for Kafka, Milvus, and Redis. All code
+    71→passes a 12-test smoke test covering imports, Kelly sizing, Monte Carlo, kill switch, PPO inference, regime
+    72→detection, stat-arb cointegration, debate chamber aggregation, RL environment stepping, vector store ANN
+    73→search, and full orchestrator construction.
+    74→2. System Architecture Overview
+    75→— 3 —
+    76→
+    77→===== PAGE 4 =====
+    78→OMEGA / Autonomous Multi-Modal AI Hedge Fund Entity Architecture Whitepaper
+    79→2.1 Layered Design Philosophy
+    80→The layered architecture is the single most important design decision in OMEGA. Each layer owns one
+    81→concern and exposes a strict contract to the layer above and below. This separation yields three concrete
+    82→benefits: any layer can be replaced without touching the others (for example, swapping Binance for Coinbase
+    83→requires implementing only the DataSource interface in Layer 1), each layer can be tested in isolation with
+    84→synthetic inputs, and the system can be deployed in degraded modes when individual components fail (the
+    85→kill switch in Layer 4 can halt trading while Layers 1, 2, and 6 continue running to preserve audit trails).
+    86→The contract between layers is event-based and immutable. Layer 1 emits typed event dataclasses
+    87→(MarketEvent, NewsEvent, MacroEvent, OnChainEvent). Layer 2 consumes those events and emits
+    88→SignalEvent objects representing directional views. Layer 4 consumes SignalEvents and emits OrderEvents
+    89→after position sizing. Layer 5 consumes OrderEvents and emits FillEvents. Layer 6 consumes FillEvents and
+    90→emits TradeClosedEvents when positions round-trip. Every event carries a timestamp, source attribution, and
+    91→structured metadata so the entire lifecycle of any trade can be reconstructed for audit purposes.
+    92→2.2 Event Flow and Data Pipeline
+    93→The diagram below shows the canonical event flow through the system. All flows are asynchronous (asyncio)
+    94→and concurrent — Layer 1 streams data continuously while Layers 2 through 6 process events as they arrive.
+    95→The orchestrator (omega.orchestrator.OmegaOrchestrator) owns the event loop and the single subscriber
+    96→queue that fans events out to every layer.
+    97→+----------------------------------------------------+
+    98→| Layer 1 - Data Nexus |
+    99→| Binance WS . Etherscan . RSS News . FRED |
+   100→| Kafka bus . Milvus vector store |
+   101→+------------------------+---------------------------+
+   102→|
+   103→+------------------------v---------------------------+
+   104→| Layer 2 - Alpha Swarm |
+   105→| PPO Trend . PPO MeanRev . LLM Macro . StatArb |
+   106→| Debate Chamber (MoE) |
+   107→+------------------------+---------------------------+
+   108→|
+   109→+------------------------v---------------------------+
+   110→| Layer 3 - Regime Detector (HMM) |
+   111→| calm_bull / volatile_bull / choppy / bear |
+   112→+------------------------+---------------------------+
+   113→|
+   114→+------------------------v---------------------------+
+   115→| Layer 4 - Risk Aegis |
+   116→| Kelly . Monte Carlo . Kill Switch . Heat |
+   117→+------------------------+---------------------------+
+   118→|
+   119→+------------------------v---------------------------+
+   120→| Layer 5 - Execution Blade |
+   121→| SOR . TWAP . VWAP . Iceberg . RL execution |
+   122→+------------------------+---------------------------+
+   123→|
+   124→+------------------------v---------------------------+
+   125→| Layer 6 - Meta-Cognition |
+   126→| Trade Autopsy (LLM) . Online Learning . GA |
+   127→+----------------------------------------------------+
+   128→— 4 —
+   129→
+   130→===== PAGE 5 =====
+   131→OMEGA / Autonomous Multi-Modal AI Hedge Fund Entity Architecture Whitepaper
+   132→Figure 1. OMEGA layered architecture and event flow.
+   133→3. Layer 1 — Data Nexus
+   134→The Data Nexus is the omniscience layer. Its mandate is simple: ensure OMEGA knows everything the
+   135→market knows, instantly. Every downstream layer depends entirely on the timeliness, completeness, and
+   136→accuracy of the data this layer produces. Dirty data here guarantees losses everywhere else, which is why the
+   137→master prompt advises building Layer 1 and Layer 4 first.
+   138→3.1 Real-Time Ingestion
+   139→The flagship data source is the BinanceWebSocketFeed, which connects to Binance's combined-stream
+   140→WebSocket endpoint and subscribes to trade, depth20, ticker, and markPrice streams for every configured
+   141→symbol. No API key is required for public market data — OMEGA begins ingesting live L2 order book depth
+   142→the moment it starts. The WebSocket client includes exponential backoff reconnection logic (1s initial delay,
+   143→30s cap) and survives transient network failures without dropping events from the perspective of downstream
+   144→consumers.
+   145→Each raw Binance frame is parsed into an immutable MarketEvent dataclass carrying the symbol, ISO-8601
+   146→timestamp, last trade price, 24-hour volume, best bid/ask with quantities, full depth-20 order book snapshot
+   147→(as a list of (price, qty) tuples), and the perpetual funding rate when available. These events are then
+   148→published to the Kafka event bus for durability and replay, and simultaneously fanned out to in-process
+   149→subscribers via an asyncio.Queue for low-latency consumption by the Alpha Swarm.
+   150→3.2 Multi-Modal Data Sources
+   151→Beyond market microstructure, the Data Nexus integrates three additional data modalities. The
+   152→EtherscanOnChainFeed polls the Etherscan REST API every 120 seconds for transactions involving known
+   153→exchange deposit wallets (Binance hot wallets by default), emitting OnChainEvent objects when whale
+   154→movements exceeding 10 ETH are detected or when the fast gas price exceeds 100 gwei. This requires the
+   155→ETHERSCAN_API_KEY environment variable; when absent, the feed yields nothing rather than mocking
+   156→data, and the rest of OMEGA continues to run on market, news, and macro data alone.
+   157→The RSSNewsFeed subscribes to public RSS endpoints from CoinDesk, Bitcoin Magazine, Reuters (via
+   158→Google News), and CNBC. Each new headline is sent through the z-ai CLI for sentiment scoring and
+   159→relevance filtering, producing a NewsEvent with a sentiment score in the range -1.0 to +1.0, a relevance score
+   160→in 0.0 to 1.0, and a list of mentioned ticker symbols. A keyword pre-filter skips the LLM call for headlines
+   161→that mention none of the configured relevance keywords (bitcoin, btc, ethereum, eth, crypto, fed, cpi, rates),
+   162→saving API quota for genuinely relevant headlines.
+   163→The FREDMacroFeed pulls macroeconomic time series from the St. Louis Fed's free FRED API: the 10-year
+   164→and 2-year Treasury yields, the 10-2 yield curve spread (a recession indicator), the CPI index, the Fed Funds
+   165→rate, WTI crude oil, and the USD/EUR exchange rate. The feed emits a MacroEvent only when a value
+   166→changes, attaching the prior value and the surprise (actual minus previous) so downstream agents can react to
+   167→— 5 —
+   168→
+   169→===== PAGE 6 =====
+   170→OMEGA / Autonomous Multi-Modal AI Hedge Fund Entity Architecture Whitepaper
+   171→the direction of the surprise rather than just the level.
+   172→3.3 Kafka Event Bus
+   173→The KafkaEventBus is the spine of the Data Nexus. It uses the confluent-kafka-python library's Producer
+   174→with zstd compression, 1ms linger time, and 1000-message batching for high-throughput publishing. When
+   175→Kafka is unavailable (for example, in local development without Docker), the bus transparently falls back to
+   176→an in-process asyncio.Queue-based pub/sub implementation that honors the same publish/subscribe contract.
+   177→This is not a mock — it is a real production-grade resilience pattern. The same code paths execute in both
+   178→modes; only the transport differs.
+   179→Events are serialized to JSON with full Enum value resolution and datetime ISO-formatting, so they can be
+   180→consumed by any downstream service written in any language. The bus auto-maps event classes to Kafka
+   181→topics: MarketEvent goes to omega.marketdata, NewsEvent to omega.news, MacroEvent to omega.macro,
+   182→OnChainEvent to omega.onchain, SignalEvent to omega.signals, OrderEvent to omega.orders, FillEvent to
+   183→omega.fills, and TradeClosedEvent to omega.trades. This topic structure allows per-layer replay and
+   184→debugging without affecting the live system.
+   185→3.4 Vector Store for RAG
+   186→The MilvusVectorStore enables pattern retrieval via cosine similarity search over historical market condition
+   187→vectors. Each stored pattern is a 128-dimensional float32 vector (normalized) representing a snapshot of
+   188→market microstructure: returns, volume z-scores, order book imbalance, volatility, RSI, Bollinger position,
+   189→and ATR. When the Alpha Swarm encounters a novel market condition, it can query the vector store for the
+   190→K nearest historical analogues, enabling statements like 'the current order-book imbalance plus funding rate
+   191→spread matches 87% with conditions preceding the November 2022 FTX collapse.'
+   192→The vector store uses Milvus with HNSW indexing (M=16, efConstruction=200) in production. When
+   193→pymilvus is not installed or Milvus is unreachable, it falls back to a NumPy-backed implementation that
+   194→performs brute-force cosine similarity search over a stored matrix. The fallback is functional for collections
+   195→up to roughly 100,000 vectors; beyond that, Milvus is mandatory for acceptable query latency.
+   196→4. Layer 2 — Alpha Swarm
+   197→The Alpha Swarm is the intelligence layer. Rather than relying on a single model, it uses a
+   198→Mixture-of-Experts architecture in which different agents specialize in different market phenomena. Every
+   199→agent implements the same AlphaAgent interface — an on_market method that processes MarketEvents and
+   200→returns zero or more SignalEvents — so agents are pluggable and the orchestrator code does not need to
+   201→know which agents are active.
+   202→— 6 —
+   203→
+   204→===== PAGE 7 =====
+   205→OMEGA / Autonomous Multi-Modal AI Hedge Fund Entity Architecture Whitepaper
+   206→4.1 PPO Agent (The Quant)
+   207→The PPO agent is the centerpiece of the Alpha Swarm and the most complex piece of code in the system. It
+   208→implements Proximal Policy Optimization from scratch in PyTorch, with an actor-critic architecture: the
+   209→actor is a multi-layer perceptron (observation_dim to 256 to 256 to 3) producing logits over the discrete
+   210→action space SHORT, FLAT, LONG; the critic is a separate MLP (observation_dim to 256 to 256 to 1)
+   211→producing a state-value estimate. Both networks use LayerNorm and Tanh activations for training stability.
+   212→The observation vector is 64-dimensional, constructed from a rolling window of market data: 16 bars of log
+   213→returns, 8 bars of order book imbalance, and 6 derived features (volume z-score, 16-bar volatility, RSI-14,
+   214→Bollinger position, ATR-14 normalized by close, and a placeholder for future features). The remaining 34
+   215→dimensions are reserved for expansion without breaking checkpoint compatibility.
+   216→Training uses Generalized Advantage Estimation (GAE-lambda) with gamma=0.99 and lambda=0.95.
+   217→Rollouts of 2048 steps are collected before each PPO update, which runs 10 epochs of mini-batch SGD with
+   218→batch size 64. The clipped surrogate objective uses epsilon=0.20, the value loss coefficient is 0.5, and the
+   219→entropy bonus coefficient is 0.01 to encourage exploration. Gradient norms are clipped to 0.5 on both actor
+   220→and critic. The agent supports two modes — 'trend' and 'meanrev' — which share the same architecture but
+   221→differ in reward shaping: the trend mode rewards capturing directional moves, while the meanrev mode
+   222→rewards fading extremes and penalizes being on the wrong side of momentum.
+   223→4.2 LLM Macro Agent
+   224→The LLM Macro Agent is the system's narrative intelligence. It maintains rolling buffers of the most recent
+   225→30 news headlines, 20 macro indicator updates, and 20 on-chain events, plus a snapshot of current prices and
+   226→funding rates for every tracked symbol. Every 300 seconds (configurable), it constructs a structured prompt
+   227→from this context and queries the z-ai CLI for a directional view on each symbol. The prompt instructs the
+   228→LLM to act as a senior macro strategist, to be calibrated (high confidence only when evidence is strong), to
+   229→avoid recency bias, and to consider second-order effects. The required response format is a JSON object
+   230→mapping each symbol to a score in -1.0 to +1.0, a confidence in 0.0 to 1.0, a one-sentence rationale, a list of
+   231→catalysts, plus a regime_view and key_risk at the top level.
+   232→The agent runs as an asyncio background task, so the LLM latency (which can exceed 10 seconds) never
+   233→blocks the market data processing loop. When the on_market handler is called between LLM polls, it returns
+   234→a cached SignalEvent based on the most recent view, throttled to one emission per symbol per 60 seconds to
+   235→avoid spamming the Debate Chamber.
+   236→4.3 Statistical Arbitrage Agent
+   237→The StatArb agent monitors cointegration between asset pairs using the Engle-Granger two-step method. For
+   238→every pair of tracked symbols (by default, all 2-combinations of BTC, ETH, SOL), it periodically refits an
+   239→OLS regression of log prices, runs the Augmented Dickey-Fuller test on the residuals, and stores the hedge
+   240→ratio, alpha, p-value, ADF statistic, and rolling spread statistics. Pairs with an ADF p-value below 0.05 are
+   241→considered cointegrated.
+   242→— 7 —
+   243→
+   244→===== PAGE 8 =====
+   245→OMEGA / Autonomous Multi-Modal AI Hedge Fund Entity Architecture Whitepaper
+   246→When the spread's z-score exceeds the entry threshold (default 2.0 standard deviations from its rolling mean),
+   247→the agent emits a pair of signals to short the over-valued leg and long the under-valued leg. When the z-score
+   248→reverts to within the exit threshold (default 0.5), the agent emits closing signals for both legs. Confidence
+   249→scales with the magnitude of the z-score, capped at 0.85. The agent uses statsmodels for the OLS regression
+   250→and ADF test, with no shortcuts or approximations.
+   251→4.4 Debate Chamber (Mixture of Experts)
+   252→The Debate Chamber is the meta-agent that aggregates raw signals from all agents into a single consolidated
+   253→SignalEvent per symbol. It receives signals through the submit method, applies the current regime-based
+   254→agent weight to each signal's confidence, and groups them by symbol within a rolling 5-second window.
+   255→When at least quorum (default 2) agents have submitted signals for a symbol, the chamber computes a
+   256→weighted vote: each signal contributes its side (+1 for BUY, -1 for SELL, 0 for FLAT) multiplied by its
+   257→weighted confidence, and the sum is divided by the total confidence.
+   258→Conflict detection prevents the chamber from emitting low-quality signals when agents disagree. If the
+   259→standard deviation of the normalized votes exceeds 0.55 (indicating strong opposition), the chamber defers —
+   260→it drops the pending signals for that symbol and waits for a clearer consensus. This explicit 'do nothing'
+   261→behavior is critical: in regimes of high uncertainty, the best trade is frequently no trade at all.
+   262→5. Layer 3 — Market Regime Detector
+   263→A powerful bot does not use the same strategy in a bull market and a bear market. The Regime Detector layer
+   264→uses a Gaussian Hidden Markov Model (via the hmmlearn library) to classify the current market into one of
+   265→four canonical regimes: calm_bull, volatile_bull, choppy, and bear. The HMM is fit on a two-dimensional
+   266→observation vector of rolling returns and 20-bar realized volatility, with a full covariance matrix and 100 EM
+   267→iterations.
+   268→State-to-regime mapping is non-trivial because the HMM does not label its states semantically. The mapping
+   269→algorithm inspects the emission means of each state: states are sorted by mean return, the top half are
+   270→designated as bull states and the bottom half as non-bull. Within the bull states, the lower-volatility state is
+   271→calm_bull and the higher-volatility state is volatile_bull. Within the non-bull states, the state with smaller
+   272→absolute mean return is choppy (zero-drift, mean-reverting) and the state with larger absolute mean return is
+   273→bear. This deterministic mapping ensures that retraining the HMM on new data does not permute the regime
+   274→labels.
+   275→When the regime transitions, the RegimeWeightRouter returns a new agent weight dictionary that the Debate
+   276→Chamber uses to re-weight every agent's vote. The default weight matrix is: in calm_bull, trend=0.50,
+   277→meanrev=0.10, macro=0.25, stat_arb=0.15; in bear, trend=0.05, meanrev=0.30, macro=0.40, stat_arb=0.25.
+   278→The rationale is that trend-following strategies die in choppy and bear markets, mean-reversion strategies
+   279→excel in choppy markets, and the LLM macro agent is most valuable in regime transitions and crisis periods
+   280→where narrative dominates price action.
+   281→— 8 —
+   282→
+   283→===== PAGE 9 =====
+   284→OMEGA / Autonomous Multi-Modal AI Hedge Fund Entity Architecture Whitepaper
+   285→6. Layer 4 — Risk Aegis
+   286→The Risk Aegis layer sits between signal generation and order execution. Its mandate is survival: maximizing
+   287→profit means nothing if a black swan wipes the account. Every signal from the Debate Chamber passes
+   288→through five sequential gates before it becomes an OrderEvent: kill switch check, confidence floor, Kelly
+   289→position sizing, Monte Carlo de-risking, and portfolio heat check. If any gate rejects, the signal is dropped
+   290→and no order is emitted.
+   291→6.1 Kelly Criterion Position Sizing
+   292→The KellyPositionSizer computes optimal position size from win probability and win/loss ratio using the
+   293→classic Kelly formula f* = (p*b - q) / b, where p is the win probability, b is the win/loss ratio (take_profit_bps
+   294→divided by stop_loss_bps), and q = 1 - p. The win probability is a 50/50 blend of the signal's confidence and
+   295→the agent's historical win rate (when at least 30 trades have been recorded for that agent).
+   296→Three modifications are applied to the raw Kelly fraction. First, fractional Kelly: the system uses one-quarter
+   297→Kelly by default (kelly_fraction = 0.25) to reduce variance and protect against estimation error in p and b.
+   298→Second, an asymmetric loss-streak penalty: if an agent's recent loss rate exceeds 50%, the Kelly fraction is
+   299→multiplied by (1 - recent_loss_rate), progressively defunding agents that are currently misfiring. Third, a
+   300→per-trade risk cap: the position size is capped such that the dollar amount at risk (quantity times stop-loss
+   301→distance) does not exceed 1% of equity. Finally, a volatility scaling multiplier adjusts size inversely to current
+   302→ATR, halving position size when volatility doubles.
+   303→6.2 Monte Carlo Drawdown Engine
+   304→Every second, the MonteCarloEngine runs 10,000 simulations of the next 30 bars using a bootstrap of recent
+   305→realized returns. For each path, it computes the cumulative P&L; assuming the current position value stays
+   306→constant, tracks the running peak, and records the maximum drawdown from peak. The probability of
+   307→experiencing a drawdown exceeding 2% of the current position value within the 30-bar horizon is the
+   308→headline output.
+   309→This probability drives a position-size multiplier. When the drawdown probability is below 0.30, no
+   310→de-risking is applied. When it exceeds 0.80, position size is reduced to 20% of the Kelly-derived value.
+   311→Between 0.30 and 0.80, the multiplier decreases linearly from 1.0 to 0.2. The entire simulation is vectorized
+   312→in NumPy: 10,000 paths times 30 bars equals 300,000 samples, computed in under 50 milliseconds on a
+   313→single CPU core.
+   314→— 9 —
+   315→
+   316→===== PAGE 10 =====
+   317→OMEGA / Autonomous Multi-Modal AI Hedge Fund Entity Architecture Whitepaper
+   318→6.3 Kill Switch
+   319→The kill switch is the hard-coded safety layer that bypasses all AI. It triggers an immediate
+   320→cancel-all-and-flatten when any of five conditions are met: end-to-end latency exceeds 5 seconds, the
+   321→exchange API error count exceeds 5, a flash crash is detected (greater than 5% price drop in 60 seconds),
+   322→portfolio drawdown exceeds the maximum threshold (default 8%), or a manual trigger is invoked. Once
+   323→triggered, the kill switch LATCHES — it must be explicitly reset by a human before the system can trade
+   324→again. This latching behavior is deliberate: a system that auto-recovers from a flash crash will often re-enter
+   325→at exactly the wrong time.
+   326→6.4 Portfolio Heat Tracker
+   327→The PortfolioHeatTracker prevents over-concentration in correlated exposures. It maintains a rolling 100-bar
+   328→return history for every tracked symbol, computes the correlation matrix on demand, and rejects new
+   329→positions that would push aggregate portfolio heat above the configured maximum (default 0.30). A new
+   330→position is also rejected if it is more than 70% correlated with an existing position in the same direction —
+   331→preventing the system from accumulating 10 long positions that are all effectively 10x exposure to BTC. The
+   332→portfolio heat metric is computed as the square root of the weighted covariance matrix product, which is the
+   333→standard portfolio volatility formula.
+   334→7. Layer 5 — Execution Blade
+   335→Getting the best price requires algorithms that hide your intentions and outsmart other bots. The Execution
+   336→Blade owns the Smart Order Router (SOR), three classic execution algorithms (TWAP, VWAP, Iceberg), a
+   337→PPO-based execution RL agent that learns optimal slicing, and a real Binance REST API executor with
+   338→HMAC-SHA256 request signing.
+   339→The SOR picks the execution algorithm based on order notional: orders under $1,000 are sent as single
+   340→market orders, $1,000 to $50,000 use TWAP with 5 slices at 3-second intervals, $50,000 to $500,000 use
+   341→VWAP with a 10% participation rate cap, and orders above $500,000 use Iceberg with a 5% display quantity.
+   342→The ExecutionRLAgent (when trained) can override this heuristic selection based on order-book features:
+   343→bid-ask spread, depth imbalance, recent volatility, and time of day. It uses a continuous action space (number
+   344→of slices, participation rate, display quantity percentage) with a Gaussian PPO policy, rewarded by negative
+   345→slippage versus the arrival price.
+   346→The BinanceExecutor integrates with the official Binance REST API. Every order submission, cancellation,
+   347→and balance query is HMAC-SHA256 signed with the user's API secret. The executor supports both
+   348→production (api.binance.com) and testnet (testnet.binance.vision) endpoints via the BINANCE_TESTNET
+   349→environment variable. When API credentials are absent, the executor runs in DRY-RUN mode: it logs every
+   350→order it would submit but does not send the HTTP request. This is an explicit safety mode — not a mock —
+   351→so the system never accidentally submits real orders without credentials.
+   352→— 10 —
+   353→
+   354→===== PAGE 11 =====
+   355→OMEGA / Autonomous Multi-Modal AI Hedge Fund Entity Architecture Whitepaper
+   356→8. Layer 6 — Meta-Cognition Core
+   357→The Meta-Cognition layer makes OMEGA self-aware of its own performance degradation. It owns three
+   358→sub-modules: Trade Autopsy, Online Learning, and Genetic Optimization. Together they close the
+   359→self-improvement loop that distinguishes OMEGA from a static trading bot.
+   360→The TradeAutopsy module batches closed trades and, every 10 closed positions, sends the batch to the z-ai
+   361→LLM for root-cause analysis. The prompt instructs the LLM to categorize each trade into one of eight
+   362→outcome categories (good_entry, bad_entry, slippage_dominant, news_catalyst, regime_mismatch,
+   363→stop_too_tight, take_profit_too_early, kill_switch_forced, other), provide a one-sentence root cause, an
+   364→actionable improvement suggestion, and a confidence score in the analysis. Findings are persisted to disk as
+   365→JSON files for the Online Learner and Genetic Optimizer to consume.
+   366→The OnlineLearner periodically retrains underperforming agents on the most recent data window. For PPO
+   367→agents, this means collecting a fresh rollout from the latest market data and running a PPO update. The
+   368→decision to retrain is triggered when an agent's recent 50-trade average PnL is more than 10 basis points
+   369→worse than its historical average — a clear signal that the agent's policy has decayed relative to the regime it
+   370→was trained on.
+   371→The GeneticOptimizer applies Darwinian evolution to agent hyperparameters. When an agent's 30-day
+   372→Sharpe ratio falls below -0.5, the optimizer kills the agent and spawns a mutated version with
+   373→hyperparameters perturbed by Gaussian noise. Mutation operators include: log-normal perturbation of
+   374→learning rate and entropy coefficient, additive perturbation of clip ratio, rare integer jumps in hidden layer
+   375→size (plus or minus 32, 64 units), and rare integer shifts in observation window. Survival is determined by
+   376→Sharpe ratio over the trial window — if the mutant outperforms its parent, it survives; otherwise the parent is
+   377→restored. This is real genetic search over the hyperparameter space, not random search.
+   378→9. Reinforcement Learning Environment
+   379→The TradingEnvironment is the central RL training environment explicitly requested by the master prompt. It
+   380→ties the Alpha Swarm to the Risk Aegis by routing agent actions through the Kelly position sizer and Monte
+   381→Carlo de-risking, then computing a reward that is risk-adjusted rather than purely PnL-based.
+   382→The environment exposes a standard reset/step interface compatible with both offline (historical data) and
+   383→online (live Binance WebSocket) modes. In offline mode, observations are constructed from a Pandas
+   384→DataFrame of OHLCV bars; in online mode, they arrive from the Data Nexus's subscriber queue. The
+   385→observation is the same 64-dimensional feature vector used by the PPO agent: 16 bars of log returns, 8 bars of
+   386→order book imbalance, and 6 derived technical features.
+   387→The reward function is the critical design decision. A pure PnL reward leads to over-trading and blow-ups.
+   388→Instead, the environment computes a composite reward: the rolling 30-bar Sharpe ratio scaled by 10, minus a
+   389→drawdown penalty (2 times the current drawdown from peak equity), plus a Kelly alignment bonus (0.5 times
+   390→— 11 —
+   391→
+   392→===== PAGE 12 =====
+   393→OMEGA / Autonomous Multi-Modal AI Hedge Fund Entity Architecture Whitepaper
+   394→the Kelly fraction the Risk Aegis would approve for the chosen position), minus a 100-point penalty if the kill
+   395→switch is triggered. This reward shaping produces agents that take risk-adjusted positions rather than
+   396→maximum-size bets.
+   397→Episode termination occurs under four conditions: the data stream ends, the maximum episode length (default
+   398→5,000 bars) is reached, the kill switch is triggered, or equity falls below 50% of initial capital. The
+   399→environment tracks the equity curve throughout the episode and reports Sharpe ratio, maximum drawdown,
+   400→and total return in its stats dictionary.
+   401→10. Production Deployment
+   402→OMEGA ships with a docker-compose.yml that brings up Apache Kafka, Milvus (with its etcd and MinIO
+   403→dependencies), and Redis with a single command: docker-compose up -d. The system auto-detects whether
+   404→these services are available and uses them if present, falling back to in-process equivalents otherwise. This
+   405→allows the same codebase to run on a developer laptop (in-process fallbacks), on a staging server (real Kafka,
+   406→in-process Milvus), or in full production (real everything).
+   407→The recommended production hardware is 8+ CPU cores (PPO training is CPU-bound for the network sizes
+   408→used here), 32 GB of RAM (Milvus and Kafka both benefit from generous memory), an optional GPU (an
+   409→RTX 4090 speeds up PPO training by 5-10x), co-location with the exchange for sub-10ms execution latency,
+   410→and NVMe storage for Milvus and Kafka log persistence. The FPGA acceleration mentioned in the original
+   411→architectural blueprint is not implemented in this version; it would belong in a C++ or Rust extension of the
+   412→BinanceExecutor.
+   413→The deployment checklist in the README walks through the critical pre-production steps: setting
+   414→OMEGA_ENV=production, configuring real Kafka and Milvus, setting BINANCE_API_KEY and
+   415→BINANCE_API_SECRET, starting on Binance Testnet for at least one week of paper trading, monitoring the
+   416→kill switch trigger rate (target: less than one per week), setting up alerting on kill switch triggers, configuring
+   417→S3 backup of trade autopsy JSON files, running PPO training weekly with fresh data, and reviewing genetic
+   418→mutations monthly.
+   419→11. Risk Disclosures and Disclaimer
+   420→This is an architectural framework for an institutional-grade trading system. Building, deploying, and
+   421→operating such a system requires expertise in Python, distributed systems, financial mathematics, and risk
+   422→management. Trading cryptocurrencies involves substantial risk of loss. The strategies implemented here,
+   423→including PPO-based signal generation, Kelly Criterion position sizing, and Monte Carlo drawdown
+   424→estimation, are well-established in the quantitative finance literature but their application to live markets
+   425→requires empirical validation that is beyond the scope of this codebase.
+   426→— 12 —
+   427→
+   428→===== PAGE 13 =====
+   429→OMEGA / Autonomous Multi-Modal AI Hedge Fund Entity Architecture Whitepaper
+   430→Never deploy with capital you cannot afford to lose. Always start with testnet, paper-trade for months before
+   431→live trading, and keep position sizes tiny until you have empirically validated every layer. The kill switch
+   432→exists for a reason — when in doubt, the system halts. The Meta-Cognition layer's trade autopsy exists for a
+   433→reason — when losses occur, the system learns. The Genetic Optimizer exists for a reason — when agents
+   434→decay, they are replaced. But none of these mechanisms can prevent losses from unknown unknowns, regime
+   435→changes faster than the HMM can detect, exchange outages, or black swan events.
+   436→The code in this repository is provided as-is under the MIT license. The authors are not responsible for any
+   437→financial losses incurred through its use. This whitepaper and the accompanying code are architectural
+   438→artifacts, not investment advice.
+   439→— 13 —
+   440→
+   441→
