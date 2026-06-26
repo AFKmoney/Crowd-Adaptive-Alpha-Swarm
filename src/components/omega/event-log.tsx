@@ -31,6 +31,11 @@ const EVENT_META: Record<EventType, { icon: React.ReactNode; text: string; borde
   maker_grid_fill: { icon: <CheckCircle2 className="h-3.5 w-3.5" />, text: 'text-emerald-300', border: 'border-l-emerald-500', bg: 'bg-emerald-500/5' },
   maker_grid_complete: { icon: <CheckCircle2 className="h-3.5 w-3.5" />, text: 'text-teal-300', border: 'border-l-teal-500', bg: 'bg-teal-500/10', glow: true },
   wall_detected: { icon: <Layers className="h-3.5 w-3.5" />, text: 'text-amber-300', border: 'border-l-amber-500', bg: 'bg-amber-500/5' },
+  time_bandit_strike: { icon: <TimerIcon />, text: 'text-amber-200', border: 'border-l-amber-400', bg: 'bg-amber-500/15', glow: true },
+}
+
+function TimerIcon() {
+  return <span className="text-sm leading-none">⏳</span>
 }
 
 function FlameIcon() {

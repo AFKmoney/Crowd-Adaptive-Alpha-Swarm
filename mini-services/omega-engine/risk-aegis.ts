@@ -55,6 +55,12 @@ export interface RiskContext {
   volatilityRegime: VolatilityRegime
   cascadeActive: boolean
   executionBlade: ExecutionBlade
+  // TimeBandit pre-emption: when set, the position uses the TimeBandit's maximally
+  // widened TP and is treated as a contrarian strike (maker-grid + hors-dogme eligible).
+  timeBanditStrike?: {
+    takeProfitBps: number
+    confidence: number
+  }
 }
 
 export class RiskAegis {
@@ -149,7 +155,12 @@ export class RiskAegis {
       consensus.side !== 'FLAT' &&
       ((consensus.side === 'BUY' && ext.direction === 'short') ||
         (consensus.side === 'SELL' && ext.direction === 'long'))
-    const isViableContrarian = fadesCrowd && consensus.confidence >= OVERRIDE_CONFIDENCE
+    // A TimeBandit strike (priority-0 pre-emption from the Boule de Cristal) is ALWAYS
+    // treated as a viable contrarian — it fades a liquidation cascade, which is the
+    // sharpest contrarian edge. This makes it eligible for the hors-dogme override and
+    // routes it through the maker-grid execution.
+    const isTimeBandit = !!ctx.timeBanditStrike
+    const isViableContrarian = (fadesCrowd && consensus.confidence >= OVERRIDE_CONFIDENCE) || isTimeBandit
 
     // ---- Decide what to do with the consensus signal ----
     let decision: RiskDecision
@@ -293,6 +304,10 @@ export class RiskAegis {
     const elasticBoost = isContrarian && ctx.cascadeActive && ctx.volatilityRegime === 'extreme'
     if (elasticBoost) {
       tpBps = Math.round(tpBps * TP_EXTREME_BOOST)
+    }
+    // TimeBandit override: maximally widened TP (price will crash/pump mechanically).
+    if (ctx.timeBanditStrike) {
+      tpBps = ctx.timeBanditStrike.takeProfitBps
     }
 
     // Kelly: f = (p*b - q) / b, where p = win prob, b = rr, q = 1-p

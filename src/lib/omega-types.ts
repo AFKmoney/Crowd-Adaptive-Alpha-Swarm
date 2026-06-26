@@ -32,6 +32,7 @@ export type EventType =
   | 'maker_grid_fill'
   | 'maker_grid_complete'
   | 'wall_detected'
+  | 'time_bandit_strike'
 
 export interface MarketState {
   symbol: string
@@ -253,6 +254,36 @@ export interface ExecutionState {
   activeGrids: number
 }
 
+// ---- Time-Bandit / Boule de Cristal ----
+
+export interface CrystalBallEvent {
+  ts: number
+  side: 'long' | 'short'
+  sizeUsd: number
+  symbol: string
+}
+
+export interface CrystalBallState {
+  connected: boolean
+  signal: number
+  longLiq2sUsd: number
+  shortLiq2sUsd: number
+  thresholdUsd: number
+  recentEvents: CrystalBallEvent[]
+  strikeActive: boolean
+}
+
+export interface TimeBanditState {
+  active: boolean
+  priority: 0
+  signal: number
+  side: Side
+  confidence: number
+  takeProfitBps: number
+  strikeCount: number
+  lastStrike: { ts: number; side: Side; signal: number; confidence: number; takeProfitBps: number } | null
+}
+
 export interface OmegaState {
   ts: number
   regime: RegimeState
@@ -270,4 +301,6 @@ export interface OmegaState {
   venues: VenueState[]
   domino: DominoState
   execution: ExecutionState
+  crystalBall: CrystalBallState
+  timeBandit: TimeBanditState
 }

@@ -14,6 +14,7 @@ import { OrderBookPanel } from '@/components/omega/order-book-panel'
 import { MicrostructurePanel } from '@/components/omega/microstructure-panel'
 import { RiskPanel } from '@/components/omega/risk-panel'
 import { ExecutionPanel } from '@/components/omega/execution-panel'
+import { CrystalBallPanel } from '@/components/omega/crystal-ball-panel'
 import { Sparkles } from 'lucide-react'
 
 export default function Home() {
@@ -41,7 +42,7 @@ export default function Home() {
           <div className="mx-auto flex max-w-[1700px] items-center gap-2 px-4 py-2 sm:px-6">
             <Sparkles className="h-3.5 w-3.5 shrink-0 text-fuchsia-400" />
             <p className="text-[11px] leading-snug text-zinc-400">
-              <span className="font-semibold text-zinc-200">PROJECT TITAN</span> — Liquidation Sniper · Maker-Grid · ATR-dynamic TP/SL · Order Book Wall/Spoofing · Toxic Flow Vampire · Cross-Exchange Domino · Hors-Dogme Override
+              <span className="font-semibold text-zinc-200">PROJECT TITAN</span> — ⏳ Time-Bandit (Boule de Cristal) · Liquidation Sniper · Maker-Grid · ATR-dynamic TP/SL · Order Book Wall/Spoofing · Toxic Flow Vampire · Cross-Exchange Domino · Hors-Dogme Override
             </p>
           </div>
         </div>
@@ -59,11 +60,12 @@ export default function Home() {
             {state ? <CrowdPanel crowd={state.crowd} /> : <Skeleton className="h-[320px]" />}
           </div>
 
-          {/* Row 2 — Liquidation + Order Book + Microstructure */}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            {state ? <LiquidationPanel liq={state.liquidations} /> : <Skeleton className="h-[360px]" />}
-            {state ? <OrderBookPanel ob={state.orderBook} /> : <Skeleton className="h-[360px]" />}
-            {state ? <MicrostructurePanel toxic={state.toxicFlow} venues={state.venues} domino={state.domino} /> : <Skeleton className="h-[360px]" />}
+          {/* Row 2 — Crystal Ball + Liquidation + Order Book + Microstructure (the prescience row) */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+            {state ? <CrystalBallPanel crystal={state.crystalBall} bandit={state.timeBandit} /> : <Skeleton className="h-[400px]" />}
+            {state ? <LiquidationPanel liq={state.liquidations} /> : <Skeleton className="h-[400px]" />}
+            {state ? <OrderBookPanel ob={state.orderBook} /> : <Skeleton className="h-[400px]" />}
+            {state ? <MicrostructurePanel toxic={state.toxicFlow} venues={state.venues} domino={state.domino} /> : <Skeleton className="h-[400px]" />}
           </div>
 
           {/* Row 3 — Weights + Swarm + Risk */}

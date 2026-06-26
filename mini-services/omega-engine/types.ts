@@ -99,6 +99,8 @@ export type EventType =
   | 'maker_grid_fill'
   | 'maker_grid_complete'
   | 'wall_detected'
+  // Time-Bandit / Boule de Cristal
+  | 'time_bandit_strike'
 
 export interface OmegaEvent {
   id: string
@@ -256,6 +258,36 @@ export interface ExecutionState {
   activeGrids: number
 }
 
+// ============ Time-Bandit / Boule de Cristal ============
+
+export interface CrystalBallEvent {
+  ts: number
+  side: 'long' | 'short' // which side got liquidated
+  sizeUsd: number
+  symbol: string
+}
+
+export interface CrystalBallState {
+  connected: boolean // ws to Binance global liquidations feed
+  signal: number // -1..1 (−1 = longs being massacred, +1 = shorts squeezed)
+  longLiq2sUsd: number // long liquidations in the 2s window
+  shortLiq2sUsd: number // short liquidations in the 2s window
+  thresholdUsd: number // 500_000 — the spike that flips signal to ±1.0
+  recentEvents: CrystalBallEvent[] // live liquidation feed (last 2s, newest first)
+  strikeActive: boolean // |signal| >= 1.0
+}
+
+export interface TimeBanditState {
+  active: boolean // currently pre-empting the swarm
+  priority: 0 // ABSOLUTE — evaluates before price, before PPO, before whalewatch
+  signal: number // mirror of the crystal ball signal
+  side: Side // BUY | SELL | FLAT
+  confidence: number // 0.99 when active (algorithmic certainty)
+  takeProfitBps: number // maximally widened TP
+  strikeCount: number // cumulative strikes
+  lastStrike: { ts: number; side: Side; signal: number; confidence: number; takeProfitBps: number } | null
+}
+
 export interface OmegaState {
   ts: number
   regime: RegimeState
@@ -274,4 +306,7 @@ export interface OmegaState {
   venues: VenueState[]
   domino: DominoState
   execution: ExecutionState
+  // Time-Bandit / Boule de Cristal
+  crystalBall: CrystalBallState
+  timeBandit: TimeBanditState
 }

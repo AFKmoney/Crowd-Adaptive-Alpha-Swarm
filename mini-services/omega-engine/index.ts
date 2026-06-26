@@ -24,6 +24,8 @@ import { OrderBookSim } from './order-book.ts'
 import { ToxicFlow } from './toxic-flow.ts'
 import { VenuesDomino } from './venues.ts'
 import { ExecutionBlade } from './execution-blade.ts'
+import { CrystalBall } from './crystal-ball.ts'
+import { TimeBandit } from './time-bandit.ts'
 import type { OmegaState, OmegaEvent, EventType } from './types.ts'
 
 const PORT = 3003
@@ -54,6 +56,8 @@ const orderBook = new OrderBookSim()
 const toxic = new ToxicFlow()
 const venues = new VenuesDomino()
 const blade = new ExecutionBlade()
+const crystalBall = new CrystalBall()
+const timeBandit = new TimeBandit()
 
 const startedAt = Date.now()
 const events: OmegaEvent[] = []
@@ -148,6 +152,36 @@ function tick() {
   const toxicState = toxic.state()
   const venueState = venues.state()
 
+  // ---- Boule de Cristal (Binance global liquidations feed) ----
+  // The "ghost async task" that listens to Binance liquidations continuously.
+  // Updated BEFORE agents so the TimeBandit (priority 0) can pre-empt the swarm.
+  crystalBall.update(marketTick, sniper.cascadeActive, atrState.volatilityRegime)
+  const crystalState = crystalBall.state()
+
+  // ---- TimeBandit (priority 0, ABSOLUTE) ----
+  // Evaluates the crystal ball signal BEFORE price, BEFORE PPO, BEFORE whalewatch.
+  // If |signal| >= 1.0, it pre-empts the entire swarm and orders an immediate
+  // SHORT/LONG on OKX with confidence 0.99 and a maximally widened TP.
+  const banditStrike = timeBandit.evaluate(crystalState, atrState)
+  let timeBanditActive = false
+  if (banditStrike) {
+    timeBandit.recordStrike(banditStrike)
+    timeBanditActive = true
+    logEvent('time_bandit_strike',
+      `⏳ TIME BANDIT STRIKE — Binance cascade detected (signal ${banditStrike.signal.toFixed(2)}). ` +
+      `Pre-empting swarm → ${banditStrike.side} OKX @ conf ${(banditStrike.confidence * 100).toFixed(0)}% ` +
+      `with widened TP ${banditStrike.takeProfitBps}bps. The shock wave is guaranteed.`,
+      {
+        signal: banditStrike.signal,
+        side: banditStrike.side,
+        confidence: banditStrike.confidence,
+        takeProfitBps: banditStrike.takeProfitBps,
+        longLiq2sUsd: crystalState.longLiq2sUsd,
+        shortLiq2sUsd: crystalState.shortLiq2sUsd,
+      },
+    )
+  }
+
   // Alpha swarm — each agent evaluates with the FULL extended context
   const ctx = {
     tick: marketTick,
@@ -162,27 +196,49 @@ function tick() {
   const rawSignals = ALL_AGENTS.map((a) => a.evaluate(ctx))
 
   // Debate chamber — aggregate with effective weights
-  const { signals, consensus } = debate(rawSignals, reconfig.weights)
+  const debateResult = debate(rawSignals, reconfig.weights)
 
-  // Log consensus transitions & conflict deferrals
-  if (consensus.conflict && consensus.quorumMet && consensus.side === 'FLAT') {
-    if (consensus.voteStd > 0.6) {
-      stats.deferredCount++
-      logEvent('conflict_defer', `Debate DEFERRED — agent conflict (voteStd ${consensus.voteStd.toFixed(2)} > 0.55). No trade.`, {
+  // ---- TimeBandit OVERRIDE (priority 0) ----
+  // If the TimeBandit struck, its consensus replaces the debate chamber's output.
+  // The debate still ran (for display), but the TimeBandit's decision is absolute.
+  let consensus = debateResult.consensus
+  let signals = debateResult.signals
+  if (timeBanditActive && banditStrike) {
+    consensus = TimeBandit.overrideConsensus(banditStrike)
+    // Inject the TimeBandit as a virtual signal at the top of the swarm display
+    signals = [
+      {
+        agent: 'crowd' as const,
+        side: banditStrike.side,
+        confidence: banditStrike.confidence,
+        weightedConfidence: banditStrike.confidence,
+        rationale: `⏳ TIME BANDIT (priority 0): Binance cascade signal ${banditStrike.signal.toFixed(2)} → ${banditStrike.side} with widened TP ${banditStrike.takeProfitBps}bps. Pre-empted swarm.`,
+      },
+      ...signals,
+    ]
+  }
+
+  // Log consensus transitions & conflict deferrals (only when TimeBandit is NOT overriding)
+  if (!timeBanditActive) {
+    if (consensus.conflict && consensus.quorumMet && consensus.side === 'FLAT') {
+      if (consensus.voteStd > 0.6) {
+        stats.deferredCount++
+        logEvent('conflict_defer', `Debate DEFERRED — agent conflict (voteStd ${consensus.voteStd.toFixed(2)} > 0.55). No trade.`, {
+          voteStd: consensus.voteStd,
+          signals: signals.map((s) => ({ agent: s.agent, side: s.side, conf: s.confidence })),
+        })
+      }
+    } else if (consensus.side !== 'FLAT' && consensus.side !== lastConsensusSide) {
+      stats.consensusCount++
+      lastConsensusSide = consensus.side
+      logEvent('consensus', `Consensus ${consensus.side} @ conf ${consensus.confidence.toFixed(2)} (voteStd ${consensus.voteStd.toFixed(2)})`, {
+        side: consensus.side,
+        confidence: consensus.confidence,
         voteStd: consensus.voteStd,
-        signals: signals.map((s) => ({ agent: s.agent, side: s.side, conf: s.confidence })),
       })
+    } else if (consensus.side === 'FLAT') {
+      lastConsensusSide = null
     }
-  } else if (consensus.side !== 'FLAT' && consensus.side !== lastConsensusSide) {
-    stats.consensusCount++
-    lastConsensusSide = consensus.side
-    logEvent('consensus', `Consensus ${consensus.side} @ conf ${consensus.confidence.toFixed(2)} (voteStd ${consensus.voteStd.toFixed(2)})`, {
-      side: consensus.side,
-      confidence: consensus.confidence,
-      voteStd: consensus.voteStd,
-    })
-  } else if (consensus.side === 'FLAT') {
-    lastConsensusSide = null
   }
 
   // ---- Execution Blade: process fills on the ACTIVE grid BEFORE risk-aegis TP/SL ----
@@ -204,6 +260,10 @@ function tick() {
     volatilityRegime: atrState.volatilityRegime,
     cascadeActive: sniper.cascadeActive,
     executionBlade: blade,
+    // TimeBandit pre-emption: pass the widened TP so Risk Aegis uses it
+    timeBanditStrike: timeBanditActive && banditStrike
+      ? { takeProfitBps: banditStrike.takeProfitBps, confidence: banditStrike.confidence }
+      : undefined,
   }
   const { state: riskState, events: riskEvents } = risk.evaluate(
     consensus,
@@ -241,6 +301,9 @@ function tick() {
     venues: venueState.venues,
     domino: venueState.domino,
     execution: blade.state(),
+    // Time-Bandit / Boule de Cristal
+    crystalBall: crystalState,
+    timeBandit: timeBandit.state(crystalState),
   }
 
   io.emit('omega:state', state)
