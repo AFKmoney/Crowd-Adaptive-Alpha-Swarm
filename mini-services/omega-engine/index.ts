@@ -33,6 +33,7 @@ import { GhostProtocol } from './ghost-protocol.ts'
 import { SymphonyVector } from './symphony-vector.ts'
 import { PoisonPill } from './poison-pill.ts'
 import { QuantumArsenal } from './quantum-arsenal.ts'
+import { EliteTraderBrain } from './elite-trader-brain.ts'
 import type { OmegaState, OmegaEvent, EventType, LiveMode, LiveStatus } from './types.ts'
 
 const PORT = 3003
@@ -70,6 +71,7 @@ const ghostProtocol = new GhostProtocol()
 const symphonyVector = new SymphonyVector()
 const poisonPill = new PoisonPill()
 const quantumArsenal = new QuantumArsenal()
+const eliteBrain = new EliteTraderBrain()
 const okxClient = new OkxClient()
 const okxWs = new OkxWebSocket()
 
@@ -426,6 +428,31 @@ function tick() {
   const quantumEvents = quantumArsenal.update(marketTick, crowdState, atrState.atr14Bps, sniper.cascadeActive)
   for (const qe of quantumEvents) logEvent(qe.type, qe.message, qe.details)
 
+  // ---- Elite Trader Brain: 5-pillar decision overlay ----
+  // Count active breakthrough signals (simplified — uses quantum arsenal + divine arsenal states)
+  const activeBtCount = (wallBreaker.state().active ? 1 : 0) +
+    (ghostProtocol.state().active ? 1 : 0) +
+    (symphonyVector.state().active ? 1 : 0) +
+    (poisonPill.state().active ? 1 : 0) +
+    (crystalState.strikeActive ? 1 : 0)
+  const allConfs = [
+    wallBreaker.state().active ? wallBreaker.state().confidence : 0,
+    ghostProtocol.state().active ? 0.9 : 0,
+    symphonyVector.state().active ? Math.abs(symphonyVector.state().btcOracleSignal) : 0,
+    crystalState.strikeActive ? 0.99 : 0,
+  ]
+  const topBtConfidence = Math.max(0, ...allConfs)
+  const eliteState = eliteBrain.evaluate(
+    marketTick, crowdState, consensus, riskState,
+    activeBtCount, topBtConfidence,
+  )
+  if (eliteState.finalDecision.action === 'trade' && consensus.side !== 'FLAT') {
+    logEvent('consensus' as EventType,
+      `🧠 ELITE BRAIN — ${eliteState.finalDecision.reason} | context: ${eliteState.context.context}/${eliteState.context.session} | conviction: ${eliteState.conviction.tier} | execution: ${eliteState.execution.strategy}`,
+      { action: eliteState.finalDecision.action, size: eliteState.finalDecision.adjustedSizeUsd, context: eliteState.context.context, conviction: eliteState.conviction.tier },
+    )
+  }
+
   // Build & broadcast full extended state
   const liveStatus: LiveStatus = {
     mode: currentMode,
@@ -475,6 +502,8 @@ function tick() {
     poisonPill: poisonPill.state(),
     // Phase 6 — Quantum Arsenal
     quantumArsenal: quantumArsenal.state(),
+    // Elite Trader Brain (5 pillars)
+    eliteBrain: eliteState,
   }
 
   io.emit('omega:state', state)
