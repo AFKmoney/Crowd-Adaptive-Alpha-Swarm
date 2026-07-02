@@ -74,7 +74,7 @@ const okxClient = new OkxClient()
 const okxWs = new OkxWebSocket()
 
 // ---- Live mode state ----
-let currentMode: LiveMode = 'sim'
+let currentMode: LiveMode = 'mainnet' // MAINNET default — real prices, real trading
 let livePrice: number = 0 // latest real OKX price (0 = not yet received)
 let liveTickData: OkxLiveTick | null = null
 let liveBalance = { totalEqUsd: 0, availableUsd: 0, marginRatio: 0 }
@@ -103,8 +103,9 @@ function logEvent(type: EventType, message: string, details: Record<string, unkn
 }
 
 // Seed an initial event
-logEvent('regime_change', 'OMEGA engine online — TITAN-1 modules armed (ATR / Sniper / OrderBook / Toxic / Domino / MakerGrid). Mode: SIM (live OKX ready).', {
+logEvent('regime_change', 'OMEGA engine online — MAINNET mode. Real OKX price feed active.', {
   regime: 'calm_bull',
+  mode: 'mainnet',
 })
 
 // ---- OKX WebSocket: receive real-time price ticks ----
@@ -112,6 +113,10 @@ okxWs.onTick((t: OkxLiveTick) => {
   livePrice = t.price
   liveTickData = t
 })
+
+// ---- Auto-connect OKX WebSocket for live price feed (mainnet) ----
+okxWs.configure('mainnet')
+okxWs.connect()
 
 // ---- Mode switching (called from the omega:configure socket handler) ----
 function setMode(mode: LiveMode, creds?: { apiKey: string; apiSecret: string; passphrase: string }) {
