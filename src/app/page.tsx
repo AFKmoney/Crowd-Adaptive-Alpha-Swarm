@@ -57,8 +57,8 @@ export default function Home() {
           {state ? <EliteBrainPanel state={state} /> : <Skeleton className="h-[280px]" />}
           {/* Row 0b — Web3 Wallet (any wallet, any chain, autonomous trading) */}
           <Web3WalletPanel />
-          {/* Row 1 — Price chart + Live mode + Crowd panel */}
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {/* Row 1 — Price chart + Crowd panel */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             <div className="md:col-span-2">
               {state ? (
                 <PriceChart candles={candleHistory} positionPrice={entry} takeProfit={tp} stopLoss={sl} />
@@ -66,12 +66,8 @@ export default function Home() {
                 <Skeleton className="h-[320px]" />
               )}
             </div>
-            {state ? <LivePanel live={state.live} configureMode={configureMode} /> : <Skeleton className="h-[320px]" />}
             {state ? <CrowdPanel crowd={state.crowd} /> : <Skeleton className="h-[320px]" />}
           </div>
-
-          {/* Row 1b — Credential Manager (full width) */}
-          <CredentialsManager />
 
           {/* Row 2 — Crystal Ball + Liquidation + Order Book + Microstructure (the prescience row) */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">

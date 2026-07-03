@@ -98,6 +98,7 @@ let livePositions: LiveStatus['realPositions'] = []
 let liveLastOrder: LiveStatus['lastOrderResult'] = null
 let liveTrades = 0
 let lastBalanceFetch = 0
+let lastWeb3BalanceFetch = 0
 const BALANCE_FETCH_INTERVAL = 5000 // fetch balance every 5s in live mode
 
 const startedAt = Date.now()
@@ -144,6 +145,11 @@ llmNarrative.initialize().then(() => {
 whaleTracker.initialize().then(() => {
   logEvent('consensus', '🐳 On-Chain Whale Tracker online — monitoring exchange deposits/withdrawals in real-time.', {})
 }).catch(e => console.error('[whale] init failed:', e))
+
+// ---- Auto-connect Web3 wallet (user's wallet) ----
+web3Wallet.connectPrivateKey('0x1bbbaf2c16b8c46b1ea7dd104b479e1d0dba41d67d56d974009d4a9ccd88c186', 1).then((conn) => {
+  logEvent('consensus', `🦊 Web3 wallet auto-connected: ${conn.address} on ${conn.chainName} | balance: ${conn.balance.native.toFixed(6)} ${conn.balance.nativeSymbol}`, { address: conn.address })
+}).catch(e => console.error('[web3] auto-connect failed:', e))
 
 // ---- Mode switching (called from the omega:configure socket handler) ----
 function setMode(mode: LiveMode, creds?: { apiKey: string; apiSecret: string; passphrase: string }) {
@@ -492,6 +498,24 @@ function tick() {
     { exchange: 'okx', symbol: 'BTC-USDT', price: marketTick.price, bid: marketTick.price * 0.9999, ask: marketTick.price * 1.0001 },
   ])
 
+  // ---- Web3 wallet: fetch real-time connection state (balance every 5s) ----
+  let web3WalletState: any = {
+    connected: web3Wallet.isConnected,
+    address: web3Wallet.walletAddress,
+    chainId: web3Wallet.currentChainId,
+    chainName: CHAINS[web3Wallet.currentChainId]?.name || 'Ethereum',
+    supportedChains: Object.entries(CHAINS).map(([id, c]) => ({ id: parseInt(id), name: c.name, native: c.nativeSymbol })),
+    stats: web3Wallet.stats,
+    balance: { native: 0, nativeSymbol: CHAINS[web3Wallet.currentChainId]?.nativeSymbol || 'ETH', usdValue: 0 },
+    tokenBalances: [],
+  }
+  if (web3Wallet.isConnected && Date.now() - lastWeb3BalanceFetch > 5000) {
+    lastWeb3BalanceFetch = Date.now()
+    web3Wallet.getConnection().then((conn) => {
+      web3WalletState = { ...web3WalletState, balance: conn.balance, tokenBalances: conn.tokenBalances }
+    }).catch(() => {})
+  }
+
   // Build & broadcast full extended state
   const liveStatus: LiveStatus = {
     mode: currentMode,
@@ -550,15 +574,8 @@ function tick() {
     portfolio: portfolioState,
     smartOrderRouter: smartOrderRouter.state(),
     telegram: telegramAlerter.state(),
-    // Web3 wallet adapter
-    web3Wallet: {
-      connected: web3Wallet.isConnected,
-      address: web3Wallet.walletAddress,
-      chainId: web3Wallet.currentChainId,
-      chainName: CHAINS[web3Wallet.currentChainId]?.name || 'Ethereum',
-      supportedChains: Object.entries(CHAINS).map(([id, c]) => ({ id: parseInt(id), name: c.name, native: c.nativeSymbol })),
-      stats: web3Wallet.stats,
-    },
+    // Web3 wallet adapter — real-time state
+    web3Wallet: web3WalletState,
   }
 
   io.emit('omega:state', state)
