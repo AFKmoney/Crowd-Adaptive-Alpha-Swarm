@@ -74,6 +74,10 @@ All filtered through one question: *is the crowd on the same side as me?* If yes
 │  Layer 7 — Market Scanner                            │
 │  32 symbols · 5 sectors · Meme detector ·            │
 │  Sector rotation                                     │
+├──────────────────────────────────────────────────────┤
+│  Layer 8 — Elite Trader Brain                        │
+│  Risk-First · Conviction Sizing · Market Context ·   │
+│  Execution Intelligence · Meta-Cognition             │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -111,11 +115,22 @@ OKX, Coinbase Advanced, Kraken, Crypto.com Exchange, MetaMask/Web3 DEX (Uniswap)
 ### Market Scanner
 32 symbols across 5 sectors (Layer 1, Layer 2, DeFi, Meme, Stable), meme pump/dump detector, sector rotation with capital allocation, market breadth indicator.
 
+### Elite Trader Brain (5-Pillar Decision Engine)
+How an elite trader at Jane Street / Jump Crypto thinks, coded into the bot:
+
+1. **Risk-First** — tail risk assessment, drawdown recovery mode, survival probability calculation. Before every trade, calculates the worst case — not the best case.
+2. **Conviction Sizing** — 4 tiers (exploratory / tactical / conviction / maximum). Position size scales with signal strength × number of independent confirmations. Weak signal = small. Strong + multi-confirmed = big.
+3. **Market Context** — macro regime overlay (accumulation / markup / distribution / decline / crisis / recovery), session timing (Asia / Europe / US / overlap / weekend), liquidity conditions. The same signal is worth money in one context and loses in another. Context gates every trade.
+4. **Execution Intelligence** — slippage prediction, adverse selection avoidance, strategy selection (sniper_limit / maker_grid / TWAP / VWAP / iceberg / aggressive_market). How you enter is as important as when.
+5. **Meta-Cognition** — performance attribution per agent/weapon, edge decay detection, self-diagnosis. The bot knows which signals make money and which lose, and adjusts its own weights.
+
+The 5 pillars combine into a single final decision: TRADE / WAIT / REDUCE / HEDGE / HALT — with adjusted size, confidence, and execution plan.
+
 ### Dashboard ("God Mode" Terminal)
 - **Glassmorphism dark UI** — translucent panels, ambient gradient glows
 - **TradingView Lightweight Charts** — real candlestick chart with ENTRY/TP/SL lines
 - **Neon event terminal** — color-coded live stream with glow effects
-- **19+ live panels** — Price Action, Crowd Engine, Boule de Cristal, Liquidation Sniper, Order Book, Toxic Flow, RegimeWeightRouter, Alpha Swarm, Risk Aegis, Debate Chamber, Execution Blade, Divine Arsenal, Breakthrough Lab, Market Scanner, Multi-Exchange, Credential Manager, Terminal
+- **20+ live panels** — Elite Trader Brain, Price Action, Crowd Engine, Boule de Cristal, Liquidation Sniper, Order Book, Toxic Flow, RegimeWeightRouter, Alpha Swarm, Risk Aegis, Debate Chamber, Execution Blade, Divine Arsenal, Breakthrough Lab, Market Scanner, Multi-Exchange, Credential Manager, Terminal
 
 ---
 
