@@ -37,6 +37,9 @@ import { EliteTraderBrain } from './elite-trader-brain.ts'
 import { LLMNarrativeAgent } from './llm-narrative-agent.ts'
 import { OnChainWhaleTracker } from './on-chain-whale-tracker.ts'
 import { BacktestEngine } from './backtest-engine.ts'
+import { PortfolioOptimizer } from './portfolio-optimizer.ts'
+import { SmartOrderRouter } from './smart-order-router.ts'
+import { TelegramAlerter } from './telegram-alerter.ts'
 import type { OmegaState, OmegaEvent, EventType, LiveMode, LiveStatus } from './types.ts'
 
 const PORT = 3003
@@ -78,6 +81,9 @@ const eliteBrain = new EliteTraderBrain()
 const llmNarrative = new LLMNarrativeAgent()
 const whaleTracker = new OnChainWhaleTracker()
 const backtestEngine = new BacktestEngine()
+const portfolioOptimizer = new PortfolioOptimizer()
+const smartOrderRouter = new SmartOrderRouter()
+const telegramAlerter = new TelegramAlerter()
 const okxClient = new OkxClient()
 const okxWs = new OkxWebSocket()
 
@@ -108,6 +114,8 @@ function logEvent(type: EventType, message: string, details: Record<string, unkn
   events.unshift(ev)
   if (events.length > MAX_EVENTS) events.pop()
   io.emit('omega:event', ev)
+  // P1.3: Send Telegram alert (async, non-blocking)
+  telegramAlerter.onEvent(type, message, details).catch(() => {})
 }
 
 // Seed an initial event
@@ -468,6 +476,20 @@ function tick() {
     )
   }
 
+  // ---- P1.1 Portfolio Optimizer (Markowitz) — use market data ----
+  const portfolioState = portfolioOptimizer.optimize(
+    [
+      { symbol: 'BTC-USDT', name: 'Bitcoin', sector: 'layer1', price: marketTick.price, changePct: marketTick.ret * 100, volatility: marketTick.atrPct || 1, sparkline: market.sparkline() },
+      { symbol: 'ETH-USDT', name: 'Ethereum', sector: 'layer1', price: marketTick.price * 0.052, changePct: marketTick.ret * 120, volatility: 1.2, sparkline: market.sparkline().map(p => p * 0.052) },
+      { symbol: 'SOL-USDT', name: 'Solana', sector: 'layer1', price: marketTick.price * 0.0027, changePct: marketTick.ret * 180, volatility: 1.8, sparkline: market.sparkline().map(p => p * 0.0027) },
+    ],
+    riskState.equity,
+  )
+  // ---- P1.2 Smart Order Router — update quotes ----
+  smartOrderRouter.updateQuotes([
+    { exchange: 'okx', symbol: 'BTC-USDT', price: marketTick.price, bid: marketTick.price * 0.9999, ask: marketTick.price * 1.0001 },
+  ])
+
   // Build & broadcast full extended state
   const liveStatus: LiveStatus = {
     mode: currentMode,
@@ -522,6 +544,10 @@ function tick() {
     // P0: LLM Narrative + On-Chain Whale
     llmNarrative: llmNarrative.state(),
     onChainWhales: whaleTracker.state(),
+    // P1: Portfolio Optimizer + Smart Order Router + Telegram
+    portfolio: portfolioState,
+    smartOrderRouter: smartOrderRouter.state(),
+    telegram: telegramAlerter.state(),
   }
 
   io.emit('omega:state', state)
@@ -547,6 +573,13 @@ io.on('connection', (socket) => {
     } catch (err) {
       socket.emit('omega:configure:ack', { ok: false, error: String(err) })
     }
+  })
+
+  // ---- Configure Telegram alerts ----
+  socket.on('omega:configureTelegram', (payload: { botToken: string; chatId: string }) => {
+    console.log('[omega-engine] Telegram config received')
+    telegramAlerter.configure(payload.botToken, payload.chatId)
+    socket.emit('omega:configureTelegram:ack', { ok: telegramAlerter.isConfigured })
   })
 
   // ---- Backtest runner ----
