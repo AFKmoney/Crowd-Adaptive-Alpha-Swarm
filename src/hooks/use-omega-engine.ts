@@ -20,6 +20,10 @@ interface UseOmegaEngine {
   compositeHistory: Array<{ ts: number; composite: number }>
   candleHistory: Array<{ time: number; open: number; high: number; low: number; close: number }>
   configureMode: (mode: LiveMode, creds?: { apiKey: string; apiSecret: string; passphrase: string }) => Promise<{ ok: boolean; error?: string }>
+  web3Connect: (privateKey: string, chainId?: number) => Promise<{ ok: boolean; error?: string }>
+  web3Disconnect: () => Promise<{ ok: boolean; error?: string }>
+  web3SwitchChain: (chainId: number) => Promise<{ ok: boolean; error?: string }>
+  web3Trade: (fromToken: string, toToken: string, amountIn: number, slippageBps?: number) => Promise<{ ok: boolean; error?: string; result?: any }>
 }
 
 const MAX_WEIGHT_HISTORY = 120
@@ -127,5 +131,43 @@ export function useOmegaEngine(): UseOmegaEngine {
     })
   }, [])
 
-  return { state, connected, events, weightHistory, compositeHistory, candleHistory, configureMode }
+  const web3Connect = useCallback(async (privateKey: string, chainId?: number): Promise<{ ok: boolean; error?: string }> => {
+    const socket = socketRef.current
+    if (!socket || !socket.connected) return { ok: false, error: 'Engine not connected' }
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => resolve({ ok: false, error: 'Timeout' }), 10000)
+      socket.once('omega:web3:connect:ack', (ack: any) => { clearTimeout(timeout); resolve(ack) })
+      socket.emit('omega:web3:connect', { privateKey, chainId: chainId || 1 })
+    })
+  }, [])
+
+  const web3Disconnect = useCallback(async (): Promise<{ ok: boolean; error?: string }> => {
+    const socket = socketRef.current
+    if (!socket || !socket.connected) return { ok: false, error: 'Engine not connected' }
+    return new Promise((resolve) => {
+      socket.once('omega:web3:disconnect:ack', (ack: any) => resolve(ack))
+      socket.emit('omega:web3:disconnect', {})
+    })
+  }, [])
+
+  const web3SwitchChain = useCallback(async (chainId: number): Promise<{ ok: boolean; error?: string }> => {
+    const socket = socketRef.current
+    if (!socket || !socket.connected) return { ok: false, error: 'Engine not connected' }
+    return new Promise((resolve) => {
+      socket.once('omega:web3:switchChain:ack', (ack: any) => resolve(ack))
+      socket.emit('omega:web3:switchChain', { chainId })
+    })
+  }, [])
+
+  const web3Trade = useCallback(async (fromToken: string, toToken: string, amountIn: number, slippageBps?: number): Promise<{ ok: boolean; error?: string; result?: any }> => {
+    const socket = socketRef.current
+    if (!socket || !socket.connected) return { ok: false, error: 'Engine not connected' }
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => resolve({ ok: false, error: 'Trade timeout' }), 120000)
+      socket.once('omega:web3:trade:ack', (ack: any) => { clearTimeout(timeout); resolve({ ok: ack.success, result: ack }) })
+      socket.emit('omega:web3:trade', { fromToken, toToken, amountIn, slippageBps: slippageBps || 100 })
+    })
+  }, [])
+
+  return { state, connected, events, weightHistory, compositeHistory, candleHistory, configureMode, web3Connect, web3Disconnect, web3SwitchChain, web3Trade }
 }

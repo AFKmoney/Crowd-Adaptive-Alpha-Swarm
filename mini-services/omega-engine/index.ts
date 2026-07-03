@@ -40,6 +40,7 @@ import { BacktestEngine } from './backtest-engine.ts'
 import { PortfolioOptimizer } from './portfolio-optimizer.ts'
 import { SmartOrderRouter } from './smart-order-router.ts'
 import { TelegramAlerter } from './telegram-alerter.ts'
+import { Web3WalletAdapter, CHAINS } from './web3-wallet-adapter.ts'
 import type { OmegaState, OmegaEvent, EventType, LiveMode, LiveStatus } from './types.ts'
 
 const PORT = 3003
@@ -84,6 +85,7 @@ const backtestEngine = new BacktestEngine()
 const portfolioOptimizer = new PortfolioOptimizer()
 const smartOrderRouter = new SmartOrderRouter()
 const telegramAlerter = new TelegramAlerter()
+const web3Wallet = new Web3WalletAdapter()
 const okxClient = new OkxClient()
 const okxWs = new OkxWebSocket()
 
@@ -548,6 +550,15 @@ function tick() {
     portfolio: portfolioState,
     smartOrderRouter: smartOrderRouter.state(),
     telegram: telegramAlerter.state(),
+    // Web3 wallet adapter
+    web3Wallet: {
+      connected: web3Wallet.isConnected,
+      address: web3Wallet.walletAddress,
+      chainId: web3Wallet.currentChainId,
+      chainName: CHAINS[web3Wallet.currentChainId]?.name || 'Ethereum',
+      supportedChains: Object.entries(CHAINS).map(([id, c]) => ({ id: parseInt(id), name: c.name, native: c.nativeSymbol })),
+      stats: web3Wallet.stats,
+    },
   }
 
   io.emit('omega:state', state)
@@ -580,6 +591,63 @@ io.on('connection', (socket) => {
     console.log('[omega-engine] Telegram config received')
     telegramAlerter.configure(payload.botToken, payload.chatId)
     socket.emit('omega:configureTelegram:ack', { ok: telegramAlerter.isConfigured })
+  })
+
+  // ---- Web3 wallet connection (MetaMask, Trust, Rabby, private key — any wallet) ----
+  socket.on('omega:web3:connect', async (payload: { privateKey: string; chainId?: number }) => {
+    console.log(`[omega-engine] web3:connect — chain ${payload.chainId || 1}`)
+    try {
+      const conn = await web3Wallet.connectPrivateKey(payload.privateKey, payload.chainId || 1)
+      logEvent('consensus', `🦊 Web3 wallet connected: ${conn.address} on ${conn.chainName} | balance: ${conn.balance.native} ${conn.balance.nativeSymbol}`, { address: conn.address, chain: conn.chainName })
+      socket.emit('omega:web3:connect:ack', { ok: true, connection: conn })
+    } catch (err) {
+      socket.emit('omega:web3:connect:ack', { ok: false, error: String(err) })
+    }
+  })
+
+  // ---- Web3 wallet disconnect ----
+  socket.on('omega:web3:disconnect', () => {
+    web3Wallet.disconnect()
+    logEvent('consensus', '🦊 Web3 wallet disconnected', {})
+    socket.emit('omega:web3:disconnect:ack', { ok: true })
+  })
+
+  // ---- Web3 switch chain ----
+  socket.on('omega:web3:switchChain', async (payload: { chainId: number }) => {
+    try {
+      await web3Wallet.switchChain(payload.chainId)
+      socket.emit('omega:web3:switchChain:ack', { ok: true, chainId: payload.chainId, chainName: CHAINS[payload.chainId]?.name })
+    } catch (err) {
+      socket.emit('omega:web3:switchChain:ack', { ok: false, error: String(err) })
+    }
+  })
+
+  // ---- Web3 execute trade (autonomous) ----
+  socket.on('omega:web3:trade', async (payload: { fromToken: string; toToken: string; amountIn: number; slippageBps?: number }) => {
+    console.log(`[omega-engine] web3:trade — ${payload.amountIn} ${payload.fromToken} → ${payload.toToken}`)
+    try {
+      const result = await web3Wallet.executeTrade(payload.fromToken, payload.toToken, payload.amountIn, payload.slippageBps || 100)
+      if (result.success) {
+        logEvent('trade_open', `🦊 WEB3 TRADE FILLED — ${payload.amountIn} ${payload.fromToken} → ${result.amountOut.toFixed(6)} ${payload.toToken} | gas $${result.gasCostUsd.toFixed(2)} | tx ${result.txHash?.slice(0,16)}...`, {
+          from: payload.fromToken, to: payload.toToken, amountIn: payload.amountIn, amountOut: result.amountOut, txHash: result.txHash, gas: result.gasCostUsd,
+        })
+      } else {
+        logEvent('risk_hard_stop', `🛡️ Web3 trade failed: ${result.error}`, { error: result.error })
+      }
+      socket.emit('omega:web3:trade:ack', result)
+    } catch (err) {
+      socket.emit('omega:web3:trade:ack', { success: false, error: String(err) })
+    }
+  })
+
+  // ---- Web3 get price quote ----
+  socket.on('omega:web3:quote', async (payload: { fromToken: string; toToken: string; amountIn: number }) => {
+    try {
+      const price = await web3Wallet.getPrice(payload.fromToken, payload.toToken, payload.amountIn)
+      socket.emit('omega:web3:quote:ack', { ok: true, price, from: payload.fromToken, to: payload.toToken, amountIn: payload.amountIn })
+    } catch (err) {
+      socket.emit('omega:web3:quote:ack', { ok: false, error: String(err) })
+    }
   })
 
   // ---- Backtest runner ----

@@ -19,6 +19,7 @@ import { LivePanel } from '@/components/omega/live-panel'
 import { DivineArsenalPanel } from '@/components/omega/divine-arsenal-panel'
 import { CredentialsManager } from '@/components/omega/credentials-manager'
 import { EliteBrainPanel } from '@/components/omega/elite-brain-panel'
+import { Web3WalletPanel } from '@/components/omega/web3-wallet-panel'
 import { Sparkles } from 'lucide-react'
 
 export default function Home() {
@@ -54,6 +55,8 @@ export default function Home() {
         <main className="mx-auto w-full max-w-[1700px] flex-1 space-y-4 px-4 py-4 sm:px-6 sm:py-5">
           {/* Row 0 — Elite Trader Brain (top priority decision engine) */}
           {state ? <EliteBrainPanel state={state} /> : <Skeleton className="h-[280px]" />}
+          {/* Row 0b — Web3 Wallet (any wallet, any chain, autonomous trading) */}
+          <Web3WalletPanel />
           {/* Row 1 — Price chart + Live mode + Crowd panel */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
             <div className="md:col-span-2">
