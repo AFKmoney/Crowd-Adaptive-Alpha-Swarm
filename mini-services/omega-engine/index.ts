@@ -34,6 +34,9 @@ import { SymphonyVector } from './symphony-vector.ts'
 import { PoisonPill } from './poison-pill.ts'
 import { QuantumArsenal } from './quantum-arsenal.ts'
 import { EliteTraderBrain } from './elite-trader-brain.ts'
+import { LLMNarrativeAgent } from './llm-narrative-agent.ts'
+import { OnChainWhaleTracker } from './on-chain-whale-tracker.ts'
+import { BacktestEngine } from './backtest-engine.ts'
 import type { OmegaState, OmegaEvent, EventType, LiveMode, LiveStatus } from './types.ts'
 
 const PORT = 3003
@@ -72,6 +75,9 @@ const symphonyVector = new SymphonyVector()
 const poisonPill = new PoisonPill()
 const quantumArsenal = new QuantumArsenal()
 const eliteBrain = new EliteTraderBrain()
+const llmNarrative = new LLMNarrativeAgent()
+const whaleTracker = new OnChainWhaleTracker()
+const backtestEngine = new BacktestEngine()
 const okxClient = new OkxClient()
 const okxWs = new OkxWebSocket()
 
@@ -119,6 +125,15 @@ okxWs.onTick((t: OkxLiveTick) => {
 // ---- Auto-connect OKX WebSocket for live price feed (mainnet) ----
 okxWs.configure('mainnet')
 okxWs.connect()
+
+// ---- Initialize P0 modules: LLM Narrative + On-Chain Whale Tracker ----
+llmNarrative.initialize().then(() => {
+  logEvent('consensus', '🧠 LLM Narrative Agent online — real news analysis via z-ai SDK. Scanning CoinDesk/BitcoinMagazine/Cointelegraph every 60s.', {})
+}).catch(e => console.error('[llm] init failed:', e))
+
+whaleTracker.initialize().then(() => {
+  logEvent('consensus', '🐳 On-Chain Whale Tracker online — monitoring exchange deposits/withdrawals in real-time.', {})
+}).catch(e => console.error('[whale] init failed:', e))
 
 // ---- Mode switching (called from the omega:configure socket handler) ----
 function setMode(mode: LiveMode, creds?: { apiKey: string; apiSecret: string; passphrase: string }) {
@@ -504,6 +519,9 @@ function tick() {
     quantumArsenal: quantumArsenal.state(),
     // Elite Trader Brain (5 pillars)
     eliteBrain: eliteState,
+    // P0: LLM Narrative + On-Chain Whale
+    llmNarrative: llmNarrative.state(),
+    onChainWhales: whaleTracker.state(),
   }
 
   io.emit('omega:state', state)
@@ -528,6 +546,21 @@ io.on('connection', (socket) => {
       socket.emit('omega:configure:ack', { ok: true, mode: payload.mode, credentialsConfigured: !!creds })
     } catch (err) {
       socket.emit('omega:configure:ack', { ok: false, error: String(err) })
+    }
+  })
+
+  // ---- Backtest runner ----
+  socket.on('omega:backtest', async (payload: { scenario: string; startingEquity?: number; bars?: number }) => {
+    console.log(`[omega-engine] backtest requested: ${payload.scenario}`)
+    try {
+      const bars = backtestEngine.generateHistoricalData(payload.scenario, payload.bars || 1000)
+      const result = await backtestEngine.run(bars, payload.startingEquity || 10000, payload.scenario)
+      socket.emit('omega:backtest:result', result)
+      logEvent('consensus', `📊 BACKTEST COMPLETE — ${payload.scenario}: ${result.totalReturn}% return, ${result.totalTrades} trades, ${result.winRate}% win rate, PF ${result.profitFactor}, Sharpe ${result.sharpeRatio}, maxDD ${result.maxDrawdown}%`, {
+        scenario: payload.scenario, totalReturn: result.totalReturn, winRate: result.winRate, profitFactor: result.profitFactor, sharpe: result.sharpeRatio,
+      })
+    } catch (err) {
+      socket.emit('omega:backtest:result', { error: String(err) })
     }
   })
 
