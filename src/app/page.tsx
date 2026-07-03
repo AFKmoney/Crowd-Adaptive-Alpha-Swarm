@@ -61,7 +61,7 @@ export default function Home() {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             <div className="md:col-span-2">
               {state ? (
-                <PriceChart candles={candleHistory} positionPrice={entry} takeProfit={tp} stopLoss={sl} />
+                <PriceChart candles={candleHistory} positionPrice={entry} takeProfit={tp} stopLoss={sl} symbol={state.market.symbol} />
               ) : (
                 <Skeleton className="h-[320px]" />
               )}

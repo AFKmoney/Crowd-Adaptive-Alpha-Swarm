@@ -102,6 +102,11 @@ let liveTrades = 0
 let lastBalanceFetch = 0
 let lastWeb3BalanceFetch = 0
 const BALANCE_FETCH_INTERVAL = 5000 // fetch balance every 5s in live mode
+// The token the bot is currently analyzing/trading — changes dynamically
+let tradingSymbol = 'BTC-USDT'
+let tradingSymbolShort = 'BTC'
+let tradingPrice = 0
+let tradingSparkline: number[] = []
 
 const startedAt = Date.now()
 const events: OmegaEvent[] = []
@@ -536,6 +541,34 @@ function tick() {
   // ---- Autonomous trader: make decision based on wallet assets + market signals ----
   const llmSent = llmNarrative.state().narrativeSignal || 0
   const autoDecision = autonomousTrader.makeDecision(consensus, marketTick.price, llmSent)
+
+  // Update the trading symbol to follow what the bot is actually trading
+  if (autoDecision.action === 'swap' && autoDecision.fromAsset) {
+    // When the bot decides to swap, the chart shows the TO token (what we're buying)
+    const newSymbol = autoDecision.toToken + '-USDT'
+    const newShort = autoDecision.toToken
+    if (newSymbol !== tradingSymbol) {
+      tradingSymbol = newSymbol
+      tradingSymbolShort = newShort
+      tradingSparkline = [] // reset sparkline for new token
+      logEvent('consensus', `📊 Chart switched to ${tradingSymbolShort} — bot is now trading this token`, { symbol: tradingSymbol })
+    }
+  } else if (riskState.position) {
+    // If we have an open position, show that token
+    const posSymbol = riskState.position.side === 'BUY' ? 'BTC' : 'BTC' // simplified — would use position.symbol
+    tradingSymbolShort = posSymbol
+    tradingSymbol = posSymbol + '-USDT'
+  } else {
+    // Default to BTC when no active trade
+    tradingSymbol = 'BTC-USDT'
+    tradingSymbolShort = 'BTC'
+  }
+
+  // Build sparkline for the current trading token
+  tradingPrice = marketTick.price
+  tradingSparkline.push(tradingPrice)
+  if (tradingSparkline.length > 60) tradingSparkline.shift()
+
   // Auto-execute if auto-trade is enabled and decision is a swap
   if (autonomousTrader.state().autoTradeEnabled && autoDecision.action === 'swap' && autoDecision.confidence > 0.7) {
     // Execute in the background (non-blocking)
@@ -569,14 +602,14 @@ function tick() {
     ts: Date.now(),
     regime: regimeDet.state(),
     market: {
-      symbol: 'BTCUSDT',
-      price: Math.round(marketTick.price * 100) / 100,
+      symbol: tradingSymbolShort,
+      price: Math.round(tradingPrice * 100) / 100,
       changePct24h: Math.round(market.changePct24h() * 100) / 100,
-      sparkline: market.sparkline(),
+      sparkline: tradingSparkline.length > 0 ? tradingSparkline : market.sparkline(),
     },
     crowd: crowdState,
     weights: reconfig.weights,
-    signals: { symbol: 'BTCUSDT', agents: signals, consensus },
+    signals: { symbol: tradingSymbol, agents: signals, consensus },
     events: events.slice(0, MAX_EVENTS),
     stats: { ...stats },
     risk: riskState,

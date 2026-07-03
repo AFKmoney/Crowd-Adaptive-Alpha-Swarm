@@ -17,9 +17,10 @@ interface PriceChartProps {
   positionPrice?: number | null
   takeProfit?: number | null
   stopLoss?: number | null
+  symbol?: string
 }
 
-export function PriceChart({ candles, positionPrice, takeProfit, stopLoss }: PriceChartProps) {
+export function PriceChart({ candles, positionPrice, takeProfit, stopLoss, symbol }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -132,8 +133,10 @@ export function PriceChart({ candles, positionPrice, takeProfit, stopLoss }: Pri
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <ChartIcon className="h-4 w-4 text-teal-400" />
-          <h2 className="font-mono text-sm font-bold uppercase tracking-wider text-zinc-100">Price Action</h2>
-          <span className="text-[10px] uppercase tracking-wider text-zinc-500">TradingView · 1s candles</span>
+          <h2 className="font-mono text-sm font-bold uppercase tracking-wider text-zinc-100">
+            Price Action{symbol && <span className="ml-2 text-teal-300">{symbol}/USDT</span>}
+          </h2>
+          <span className="text-[10px] uppercase tracking-wider text-zinc-500">TradingView · 1s candles · {symbol || 'BTC'}</span>
         </div>
         {candles.length > 0 && (
           <span className="font-mono text-[10px] text-zinc-500">{candles.length} bars</span>
