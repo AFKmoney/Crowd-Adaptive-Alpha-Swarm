@@ -146,10 +146,15 @@ whaleTracker.initialize().then(() => {
   logEvent('consensus', '🐳 On-Chain Whale Tracker online — monitoring exchange deposits/withdrawals in real-time.', {})
 }).catch(e => console.error('[whale] init failed:', e))
 
-// ---- Auto-connect Web3 wallet (user's wallet) ----
-web3Wallet.connectPrivateKey('0x1bbbaf2c16b8c46b1ea7dd104b479e1d0dba41d67d56d974009d4a9ccd88c186', 1).then((conn) => {
-  logEvent('consensus', `🦊 Web3 wallet auto-connected: ${conn.address} on ${conn.chainName} | balance: ${conn.balance.native.toFixed(6)} ${conn.balance.nativeSymbol}`, { address: conn.address })
-}).catch(e => console.error('[web3] auto-connect failed:', e))
+// ---- Web3 wallet auto-connect (reads private key from env var, falls back to unconnected) ----
+const WALLET_PK = process.env.WALLET_PRIVATE_KEY || process.env.OMEGA_WALLET_KEY || ''
+if (WALLET_PK) {
+  web3Wallet.connectPrivateKey(WALLET_PK, 1).then((conn) => {
+    logEvent('consensus', `🦊 Web3 wallet auto-connected: ${conn.address} on ${conn.chainName} | balance: ${conn.balance.native.toFixed(6)} ${conn.balance.nativeSymbol}`, { address: conn.address })
+  }).catch(e => console.error('[web3] auto-connect failed:', e))
+} else {
+  logEvent('consensus', '🦊 Web3 wallet not configured — set WALLET_PRIVATE_KEY env var to auto-connect. You can also connect via the dashboard panel.', {})
+}
 
 // ---- Mode switching (called from the omega:configure socket handler) ----
 function setMode(mode: LiveMode, creds?: { apiKey: string; apiSecret: string; passphrase: string }) {
