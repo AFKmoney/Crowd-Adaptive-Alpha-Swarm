@@ -41,6 +41,7 @@ import { PortfolioOptimizer } from './portfolio-optimizer.ts'
 import { SmartOrderRouter } from './smart-order-router.ts'
 import { TelegramAlerter } from './telegram-alerter.ts'
 import { Web3WalletAdapter, CHAINS } from './web3-wallet-adapter.ts'
+import { AutonomousTrader } from './autonomous-trader.ts'
 import type { OmegaState, OmegaEvent, EventType, LiveMode, LiveStatus } from './types.ts'
 
 const PORT = 3003
@@ -86,6 +87,7 @@ const portfolioOptimizer = new PortfolioOptimizer()
 const smartOrderRouter = new SmartOrderRouter()
 const telegramAlerter = new TelegramAlerter()
 const web3Wallet = new Web3WalletAdapter()
+const autonomousTrader = new AutonomousTrader()
 const okxClient = new OkxClient()
 const okxWs = new OkxWebSocket()
 
@@ -151,6 +153,16 @@ const WALLET_PK = process.env.WALLET_PRIVATE_KEY || process.env.OMEGA_WALLET_KEY
 if (WALLET_PK) {
   web3Wallet.connectPrivateKey(WALLET_PK, 1).then((conn) => {
     logEvent('consensus', `🦊 Web3 wallet auto-connected: ${conn.address} on ${conn.chainName} | balance: ${conn.balance.native.toFixed(6)} ${conn.balance.nativeSymbol}`, { address: conn.address })
+    // Start autonomous wallet scanner
+    // The AutonomousTrader scans all 7 chains for all tokens
+    setTimeout(() => {
+      // We need the ethers Wallet instance for scanning — create it from the adapter
+      import('ethers').then(({ Wallet, JsonRpcProvider }) => {
+        const scanWallet = new Wallet(WALLET_PK.startsWith('0x') ? WALLET_PK : '0x' + WALLET_PK)
+        autonomousTrader.setWallet(scanWallet)
+        logEvent('consensus', `🤖 Autonomous trader activated — scanning all 7 chains for your tokens...`, {})
+      })
+    }, 2000)
   }).catch(e => console.error('[web3] auto-connect failed:', e))
 } else {
   logEvent('consensus', '🦊 Web3 wallet not configured — set WALLET_PRIVATE_KEY env var to auto-connect. You can also connect via the dashboard panel.', {})
@@ -521,6 +533,24 @@ function tick() {
     }).catch(() => {})
   }
 
+  // ---- Autonomous trader: make decision based on wallet assets + market signals ----
+  const llmSent = llmNarrative.state().narrativeSignal || 0
+  const autoDecision = autonomousTrader.makeDecision(consensus, marketTick.price, llmSent)
+  // Auto-execute if auto-trade is enabled and decision is a swap
+  if (autonomousTrader.state().autoTradeEnabled && autoDecision.action === 'swap' && autoDecision.confidence > 0.7) {
+    // Execute in the background (non-blocking)
+    autonomousTrader.executeDecision(
+      web3Wallet,
+      async (chainId: number) => { await web3Wallet.switchChain(chainId) },
+    ).then((result) => {
+      if (result.success) {
+        logEvent('trade_open', `🤖 AUTONOMOUS TRADE — ${autoDecision.reason} | tx ${result.txHash?.slice(0,16)}...`, {
+          from: autoDecision.fromAsset?.symbol, to: autoDecision.toToken, amount: autoDecision.amount, chain: autoDecision.toChainId,
+        })
+      }
+    }).catch(() => {})
+  }
+
   // Build & broadcast full extended state
   const liveStatus: LiveStatus = {
     mode: currentMode,
@@ -581,6 +611,8 @@ function tick() {
     telegram: telegramAlerter.state(),
     // Web3 wallet adapter — real-time state
     web3Wallet: web3WalletState,
+    // Autonomous trader — multi-chain wallet scanner + auto-decisions
+    autonomousTrader: autonomousTrader.state(),
   }
 
   io.emit('omega:state', state)
@@ -670,6 +702,22 @@ io.on('connection', (socket) => {
     } catch (err) {
       socket.emit('omega:web3:quote:ack', { ok: false, error: String(err) })
     }
+  })
+
+  // ---- Autonomous trader: toggle auto-trade ----
+  socket.on('omega:autonomous:toggle', (payload: { enabled: boolean }) => {
+    autonomousTrader.setAutoTrade(payload.enabled)
+    logEvent('consensus', `🤖 Autonomous trading ${payload.enabled ? 'ENABLED' : 'DISABLED'} — bot will ${payload.enabled ? 'automatically execute trades based on wallet assets + market signals' : 'observe only'}`, { enabled: payload.enabled })
+    socket.emit('omega:autonomous:toggle:ack', { ok: true, enabled: payload.enabled })
+  })
+
+  // ---- Autonomous trader: force rescan ----
+  socket.on('omega:autonomous:rescan', () => {
+    autonomousTrader.scanAllChains().then(() => {
+      const s = autonomousTrader.state()
+      logEvent('consensus', `🤖 Wallet rescan complete — ${s.totalAssets} assets found on ${s.chainsWithAssets.length} chains ($${s.totalValueUsd.toFixed(2)})`, { assets: s.totalAssets, chains: s.chainsWithAssets.length })
+    })
+    socket.emit('omega:autonomous:rescan:ack', { ok: true })
   })
 
   // ---- Backtest runner ----
