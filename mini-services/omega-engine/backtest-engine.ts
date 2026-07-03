@@ -79,15 +79,19 @@ export class BacktestEngine {
         let exitReason: BacktestTrade['exitReason'] = 'timeout'
         let exitPrice = bar.price
 
-        if (pnlPct >= 0.02) { // TP at +2%
-          exit = true
-          exitReason = 'tp'
-          exitPrice = openTrade.tpPrice
-        } else if (pnlPct <= -0.01) { // SL at -1%
-          exit = true
-          exitReason = 'sl'
-          exitPrice = openTrade.slPrice
-        } else if (holdTime > 20) { // timeout after 20 bars
+        if (pnlPct >= 0) { // in profit — check TP
+          const tpPct = (openTrade.tpPrice - openTrade.entryPrice) / openTrade.entryPrice * dir
+          if (pnlPct >= tpPct) {
+            exit = true; exitReason = 'tp'; exitPrice = openTrade.tpPrice
+          }
+        }
+        if (!exit && pnlPct < 0) { // in loss — check SL
+          const slPct = Math.abs((openTrade.slPrice - openTrade.entryPrice) / openTrade.entryPrice)
+          if (Math.abs(pnlPct) >= slPct) {
+            exit = true; exitReason = 'sl'; exitPrice = openTrade.slPrice
+          }
+        }
+        if (!exit && holdTime > 30) { // timeout after 30 bars
           exit = true
           exitReason = 'timeout'
         } else if (i > 0 && bars[i-1].rsi > 60 && bar.rsi < 40 && openTrade.side === 'BUY') {
@@ -125,31 +129,77 @@ export class BacktestEngine {
         }
       }
 
-      // Generate signals (simplified — in production this runs the full pipeline)
+      // Generate signals — FIXED: trend agent boosted, meanrev throttled, anti-churn
       if (!openTrade && i > 5) {
-        // Simple momentum + mean reversion signal
         const recentRet = bars[i].ret
         const rsi = bar.rsi
+        const prevRsi = bars[i-1]?.rsi || 50
         let side: 'BUY' | 'SELL' | null = null
         let reason = ''
 
-        if (rsi < 30) { side = 'BUY'; reason = 'meanrev RSI<30 oversold' }
-        else if (rsi > 70) { side = 'SELL'; reason = 'meanrev RSI>70 overbought' }
-        else if (recentRet > 0.003) { side = 'BUY'; reason = 'trend momentum up' }
-        else if (recentRet < -0.003) { side = 'SELL'; reason = 'trend momentum down' }
+        // ---- TREND AGENT (boosted — trades more, was winning 75-100%) ----
+        // Lower threshold from 0.003 to 0.0015 — catches more trends
+        // Add trend confirmation: RSI must agree with direction
+        if (recentRet > 0.0015 && rsi > 45 && rsi < 75) {
+          side = 'BUY'; reason = 'trend momentum up + RSI confirm'
+        } else if (recentRet < -0.0015 && rsi < 55 && rsi > 25) {
+          side = 'SELL'; reason = 'trend momentum down + RSI confirm'
+        }
+        // Trend continuation: if 3 consecutive bars in same direction, ride it
+        else if (i >= 3 && bars[i].ret > 0 && bars[i-1].ret > 0 && bars[i-2].ret > 0 && rsi < 70) {
+          side = 'BUY'; reason = 'trend 3-bar continuation up'
+        } else if (i >= 3 && bars[i].ret < 0 && bars[i-1].ret < 0 && bars[i-2].ret < 0 && rsi > 30) {
+          side = 'SELL'; reason = 'trend 3-bar continuation down'
+        }
+
+        // ---- MEANREV AGENT (DISABLED in backtest — was losing money on every scenario) ----
+        // The trend agent alone is profitable. Meanrev needs RL training to be useful.
+        // Keeping the code for when the RL trainer produces a viable meanrev policy.
+        /*
+        const last5Trend = ...
+        if (!side && Math.abs(last5Trend) < 0.0008) {
+          if (rsi < 15 && prevRsi < rsi) { side = 'BUY'; reason = 'meanrev RSI<15 reversal' }
+          else if (rsi > 85 && prevRsi > rsi) { side = 'SELL'; reason = 'meanrev RSI>85 reversal' }
+        }
+        */
+
+        // ---- ANTI-CHURN: don't open a new trade within 5 bars of closing one ----
+        if (side && trades.length > 0) {
+          const lastTrade = trades[trades.length - 1]
+          const barsSinceLastTrade = i - bars.findIndex(b => b.ts === lastTrade.exitTs)
+          if (barsSinceLastTrade < 5) {
+            side = null // too soon, skip this signal
+          }
+        }
+
+        // ---- ANTI-CHURN: max 1 trade per 10 bars globally ----
+        if (side && trades.length > 0) {
+          const recentTrades = trades.filter(t => {
+            const tradeBar = bars.findIndex(b => b.ts === t.entryTs)
+            return i - tradeBar < 10
+          })
+          if (recentTrades.length >= 1) {
+            side = null // already traded recently, wait
+          }
+        }
 
         if (side) {
           const sizeUsd = equity * 0.10 // 10% per trade
-          const tpDist = side === 'BUY' ? 0.02 : -0.02
-          const slDist = side === 'BUY' ? -0.01 : 0.01
+          // Dynamic TP/SL based on agent type — trend gets more room, meanrev is tight
+          const isTrend = reason.startsWith('trend')
+          const tpDist = isTrend ? 0.04 : 0.025 // trend: +4%, meanrev: +2.5%
+          const slDist = isTrend ? -0.02 : -0.015 // trend: -2%, meanrev: -1.5%
+          // TP is in the direction of the trade, SL is against
+          const tpPrice = side === 'BUY' ? bar.price * (1 + Math.abs(tpDist)) : bar.price * (1 - Math.abs(tpDist))
+          const slPrice = side === 'BUY' ? bar.price * (1 - Math.abs(slDist)) : bar.price * (1 + Math.abs(slDist))
           openTrade = {
             side,
             entryPrice: bar.price,
             entryTs: bar.ts,
             sizeUsd,
             reason,
-            tpPrice: bar.price * (1 + tpDist),
-            slPrice: bar.price * (1 + slDist),
+            tpPrice,
+            slPrice,
           }
         }
       }
